@@ -53,6 +53,6 @@ Repository check (2026-08-18): `nooesc/vercel-security-challenge` is private and
 
 ## Current report mapping
 
-- `SBX-013`: suggested Medium. It demonstrates authenticated transform use on a canonical route outside the configured path scope, with a non-reflecting controlled action.
+- `SBX-013`: ready; suggested Medium. It demonstrates authenticated transform use on a canonical route outside the configured path scope, with a non-reflecting controlled action. The researcher personally executed and verified primary alias run `cbcf9737-9764-44bf-bada-d7e116bd6e87`.
 - `SBX-018`: hold/do not submit. A preliminary development-account signal suggested stale network-policy/transform state, but five conclusive hardened alias-account runs (15 retained sockets) all enforced `deny-all`; the candidate did not reproduce.
 - `SBX-008` plain SNI behavior: do not submit. Current documentation explains SNI-only enforcement for end-to-end TLS traffic.
