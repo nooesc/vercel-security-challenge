@@ -9,7 +9,7 @@
     "observer": "tsx src/observer-cli.ts",
     "test": "vitest run --dir test",
     "test:watch": "vitest --dir test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.poc.json"
   },
   "engines": {
     "node": ">=20.18"

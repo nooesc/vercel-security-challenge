@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 2,
+  "testId": "SBX-013",
+  "runId": "a1ef4cb0-eb8b-46ea-9178-8609953f7b50",
+  "startedAt": "2026-08-18T20:40:46.804Z",
+  "completedAt": "2026-08-18T20:40:56.182Z",
+  "runtime": {
+    "sandboxSdk": "@vercel/sandbox@3.0.0",
+    "controllerNode": "v25.6.0",
+    "observerRouting": "Node.js WHATWG URL parser: new URL(request.url, base).pathname"
+  },
+  "sandbox": {
+    "name": "sbx-013-poc-a1ef4cb0",
+    "sessionId": "sbx_CesMZpxXQi7SHiTw9uDSDg1ba2UY",
+    "sessionCreatedAt": "2026-08-18T20:40:48.261Z",
+    "region": "iad1"
+  },
+  "outOfScopeActionAuthorized": true,
+  "controlsPassed": true,
+  "guestConfigurationContainsBrokeredSecret": false,
+  "guestResponseContainsBrokeredSecret": false,
+  "rawPath": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/matched/%2e%2e/outside",
+  "observerNormalizedPath": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/outside",
+  "matchedControl": {
+    "normalizedPath": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/matched/control",
+    "brokeredHeaderPresent": true,
+    "statusCode": 204
+  },
+  "outsideControl": {
+    "normalizedPath": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/outside",
+    "brokeredHeaderPresent": false,
+    "statusCode": 401,
+    "actionAuthorized": false
+  },
+  "encodedDotdot": {
+    "rawUrl": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/matched/%2e%2e/outside?__sbx_run=a1ef4cb0-eb8b-46ea-9178-8609953f7b50&__sbx_test=SBX-013-POC&__sbx_case=encoded-dotdot&__sbx_canary=<redacted>",
+    "normalizedPath": "/v1/probe/a1ef4cb0-eb8b-46ea-9178-8609953f7b50/outside",
+    "observedAt": "2026-08-18T20:40:50.792Z",
+    "brokeredHeaderPresent": true,
+    "statusCode": 200,
+    "actionAuthorized": true,
+    "operationId": "op_lU5wtTEu6w9HL-KS0b9Zlz6F",
+    "authorizedAt": "2026-08-18T20:40:50.793Z"
+  },
+  "controllerBrokeredSecretSha256": "c7c724bf16671fc54a3393dac4c20351b38c955646bcadcebaa8225e746fb647",
+  "observerBrokeredSecretSha256": "c7c724bf16671fc54a3393dac4c20351b38c955646bcadcebaa8225e746fb647",
+  "commandExitCodes": {
+    "matchedControl": 0,
+    "outsideControl": 0,
+    "encodedDotdot": 0
+  },
+  "cleanup": {
+    "stopped": true,
+    "deleted": true,
+    "observerConfigDeleted": true,
+    "errors": []
+  }
+}

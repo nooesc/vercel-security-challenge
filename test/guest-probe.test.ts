@@ -46,7 +46,12 @@ describe("guest HTTP probe", () => {
       ).toString("base64url");
 
       const result = await executeFile(process.execPath, [guestProbe, payload]);
-      expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, statusCode: 204 });
+      const guestResult = JSON.parse(result.stdout) as { ok: boolean; statusCode: number; body: string };
+      expect(guestResult).toMatchObject({ ok: true, statusCode: 401 });
+      expect(JSON.parse(guestResult.body)).toMatchObject({
+        authorized: false,
+        normalizedPath: "/v1/probe/run-wire-test/outside",
+      });
 
       const client = new HttpObserverClient(observer.baseUrl, adminKey);
       const events = await client.events("run-wire-test");
@@ -56,6 +61,7 @@ describe("guest HTTP probe", () => {
         caseId: "literal-dotdot",
         canary: "sbx_wire_canary",
         method: "GET",
+        normalizedPath: "/v1/probe/run-wire-test/outside",
       });
       expect(events[0]?.rawUrl).toContain("/matched/../outside?tier=test&");
       expect(events[0]?.headers["x-sbx-harness-canary"]).toBe("sbx_wire_canary");

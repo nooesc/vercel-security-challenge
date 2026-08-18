@@ -54,7 +54,7 @@ See [notes/HARNESS.md](notes/HARNESS.md) for architecture, authentication option
 - Stop after demonstrating the minimum impact necessary for a report.
 - Keep vulnerability details private until Vercel authorizes disclosure.
 
-The harness creates non-persistent sandboxes and attempts both stop and delete cleanup after every run. Cleanup failures are included in the evidence and must be handled before continuing.
+The harness creates non-persistent sandboxes and attempts both stop and delete cleanup after every run. Cleanup failure forces an error verdict, a nonzero exit, and stops subsequent live cases.
 
 ## Automated Sandbox cases
 
@@ -78,3 +78,4 @@ Selecting `CONTROL-DENY` automatically schedules `CONTROL-ALLOW` first in the sa
 | ID | Target | Program | Status |
 | --- | --- | --- | --- |
 | FLAGS-001 | `vercel/flags` | Vercel OSS | Reproduced; draft prepared |
+| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Live reproduced; submission draft prepared |

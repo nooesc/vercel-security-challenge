@@ -22,7 +22,10 @@ class FakeSandbox implements SandboxHandle {
   stopCalls = 0;
   deleteCalls = 0;
 
-  constructor(private readonly failCommandAt?: number) {}
+  constructor(
+    private readonly failCommandAt?: number,
+    private readonly failCleanup = false,
+  ) {}
 
   async writeFiles(files: Array<{ path: string; content: string; mode?: number }>): Promise<void> {
     this.writes.push(...files);
@@ -43,10 +46,12 @@ class FakeSandbox implements SandboxHandle {
 
   async stop(): Promise<void> {
     this.stopCalls += 1;
+    if (this.failCleanup) throw new Error("simulated stop failure");
   }
 
   async delete(): Promise<void> {
     this.deleteCalls += 1;
+    if (this.failCleanup) throw new Error("simulated delete failure");
   }
 }
 
@@ -82,7 +87,13 @@ const definition: TestDefinition = {
   description: "Exercises deterministic fake probes",
   build(context) {
     return {
-      policy: "deny-all",
+      policy: {
+        allow: {
+          "observer.example": [
+            { transform: [{ headers: { "x-test-broker": context.brokeredCanary } }] },
+          ],
+        },
+      },
       cases: [
         {
           id: "case-a",
@@ -115,14 +126,14 @@ afterEach(async () => {
   );
 });
 
-async function fixture(failCommandAt?: number): Promise<{
+async function fixture(failCommandAt?: number, failCleanup = false): Promise<{
   config: HarnessConfig;
   factory: FakeFactory;
   observer: FakeObserver;
 }> {
   const directory = await mkdtemp(join(tmpdir(), "vsc-harness-test-"));
   temporaryDirectories.push(directory);
-  const sandbox = new FakeSandbox(failCommandAt);
+  const sandbox = new FakeSandbox(failCommandAt, failCleanup);
   return {
     config: {
       observerBaseUrl: "https://observer.example",
@@ -153,7 +164,7 @@ describe("HarnessRunner", () => {
 
     expect(observer.healthCalls).toBe(1);
     expect(factory.creates).toHaveLength(1);
-    expect(factory.creates[0]?.policy).toBe("deny-all");
+    expect(factory.creates[0]?.policy).toMatchObject({ allow: { "observer.example": expect.any(Array) } });
     expect(sandbox.writes).toHaveLength(1);
     expect(sandbox.writes[0]?.path).toBe("/tmp/vercel-security-harness/http-probe.mjs");
     expect(sandbox.writes[0]?.mode).toBe(0o700);
@@ -164,6 +175,12 @@ describe("HarnessRunner", () => {
     expect(payloads.map((payload) => payload.caseId)).toEqual(["case-a", "case-b"]);
     expect(new Set(payloads.map((payload) => payload.caseId)).size).toBe(2);
     expect(new Set(payloads.map((payload) => payload.runId)).size).toBe(1);
+    expect(payloads.every((payload) => !("brokeredCanary" in payload))).toBe(true);
+    const brokeredValue = JSON.stringify(factory.creates[0]?.policy).match(/broker_[A-Za-z0-9_-]+/)?.[0];
+    expect(brokeredValue).toBeDefined();
+    expect(payloads.every((payload) => !JSON.stringify(payload).includes(brokeredValue!))).toBe(true);
+    const persistedPolicy = JSON.stringify(result.evidence.configuration.policy);
+    expect(persistedPolicy).not.toContain("broker_");
 
     expect(sandbox.stopCalls).toBe(1);
     expect(sandbox.deleteCalls).toBe(1);
@@ -182,7 +199,8 @@ describe("HarnessRunner", () => {
       "case-a",
       "case-b",
     ]);
-    expect(result.evidence.configuration.canarySha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.evidence.configuration.correlationCanarySha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.evidence.configuration.brokeredCanarySha256).toMatch(/^[a-f0-9]{64}$/);
     expect(result.evidencePath).toContain(config.artifactsDir);
 
     const lines = (await readFile(result.evidencePath, "utf8")).trim().split("\n");
@@ -209,5 +227,19 @@ describe("HarnessRunner", () => {
     };
     expect(persisted.error).toBe("simulated guest command failure");
     expect(persisted.cleanup).toMatchObject({ stopped: true, deleted: true });
+  });
+
+  it("turns cleanup failure into an error verdict", async () => {
+    const { config, factory, observer } = await fixture(undefined, true);
+    const result = await new HarnessRunner(config, factory, observer).run(definition);
+
+    expect(factory.sandbox.stopCalls).toBe(1);
+    expect(factory.sandbox.deleteCalls).toBe(1);
+    expect(result.evidence.cleanup.errors).toEqual([
+      "stop: simulated stop failure",
+      "delete: simulated delete failure",
+    ]);
+    expect(result.evidence.assessment.verdict).toBe("error");
+    expect(result.evidence.error).toContain("simulated stop failure");
   });
 });

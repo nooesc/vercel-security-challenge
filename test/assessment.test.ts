@@ -34,6 +34,7 @@ function event(
     canary: "request-correlation-canary",
     method: "GET",
     rawUrl: `https://observer.example/v1/probe/run-1/${caseId}`,
+    normalizedPath: `/v1/probe/run-1/${caseId}`,
     headers,
     rawHeaders: [],
     bodyLength: 0,

@@ -29,14 +29,17 @@ const result = await new Promise((resolve) => {
     },
     (response) => {
       let bodyLength = 0;
+      const bodyChunks = [];
       response.on("data", (chunk) => {
         bodyLength += chunk.length;
+        if (bodyLength <= 4096) bodyChunks.push(Buffer.from(chunk));
       });
       response.on("end", () => {
         resolve({
           ok: true,
           statusCode: response.statusCode,
           bodyLength,
+          body: Buffer.concat(bodyChunks).toString("utf8"),
           durationMs: Date.now() - startedAt,
         });
       });

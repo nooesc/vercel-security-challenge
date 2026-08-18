@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -7,6 +7,19 @@ import type { ObserverEvent } from "./contracts.js";
 
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 const CANARY_HEADER = "x-sbx-harness-canary";
+const ACTION_SECRET_HEADER = "x-observer-action-secret";
+
+interface RecordedAction {
+  operationId: string;
+  authorizedAt: string;
+  caseId: string;
+  normalizedPath: string;
+}
+
+interface ActionConfiguration {
+  brokeredSecret: string;
+  actions: RecordedAction[];
+}
 
 interface BodyMetadata {
   bodyLength: number;
@@ -76,6 +89,18 @@ function keyMatches(header: string | undefined, adminKey: string): boolean {
   if (!header?.startsWith("Bearer ")) return false;
   const suppliedDigest = createHash("sha256").update(header.slice(7)).digest();
   const expectedDigest = createHash("sha256").update(adminKey).digest();
+  return timingSafeEqual(suppliedDigest, expectedDigest);
+}
+
+function singleHeader(headers: IncomingHttpHeaders, name: string): string | undefined {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function secretMatches(supplied: string | undefined, expected: string): boolean {
+  if (!supplied) return false;
+  const suppliedDigest = createHash("sha256").update(supplied).digest();
+  const expectedDigest = createHash("sha256").update(expected).digest();
   return timingSafeEqual(suppliedDigest, expectedDigest);
 }
 
@@ -165,6 +190,29 @@ function eventRoute(pathname: string): string | undefined {
   }
 }
 
+function actionAdminRoute(pathname: string): { runId: string; resource: "action-config" | "actions" } | undefined {
+  const match = /^\/v1\/runs\/([^/]+)\/(action-config|actions)$/.exec(pathname);
+  if (!match?.[1] || !match[2]) return undefined;
+  try {
+    return {
+      runId: decodeURIComponent(match[1]),
+      resource: match[2] as "action-config" | "actions",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function outsideActionRun(pathname: string): string | undefined {
+  const match = /^\/v1\/probe\/([^/]+)\/outside$/.exec(pathname);
+  if (!match?.[1]) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function startObserverServer(options: ObserverServerOptions): Promise<RunningObserverServer> {
   if (options.adminKey.length < 24) throw new Error("observer admin key must contain at least 24 characters");
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
@@ -175,6 +223,7 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
   const host = options.host ?? "127.0.0.1";
   const port = options.port ?? 0;
   const store = new JsonlObserverStore(options.dataPath);
+  const actionConfigurations = new Map<string, ActionConfiguration>();
   await store.initialize();
 
   const server = createServer((request, response) => {
@@ -190,11 +239,42 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
         return;
       }
 
+      const actionAdmin = actionAdminRoute(url.pathname);
+      if (actionAdmin) {
+        const authorization = singleHeader(request.headers, "authorization");
+        if (!keyMatches(authorization, options.adminKey)) {
+          sendJson(response, 401, { error: "unauthorized" });
+          return;
+        }
+        if (request.method === "POST" && actionAdmin.resource === "action-config") {
+          const brokeredSecret = singleHeader(request.headers, ACTION_SECRET_HEADER);
+          if (!brokeredSecret || brokeredSecret.length < 24) {
+            sendJson(response, 400, { error: `${ACTION_SECRET_HEADER} must contain at least 24 characters` });
+            return;
+          }
+          actionConfigurations.set(actionAdmin.runId, { brokeredSecret, actions: [] });
+          sendJson(response, 201, { configured: true });
+          return;
+        }
+        if (request.method === "GET" && actionAdmin.resource === "actions") {
+          sendJson(response, 200, {
+            actions: actionConfigurations.get(actionAdmin.runId)?.actions ?? [],
+          });
+          return;
+        }
+        if (request.method === "DELETE" && actionAdmin.resource === "action-config") {
+          actionConfigurations.delete(actionAdmin.runId);
+          response.writeHead(204, { "cache-control": "no-store" });
+          response.end();
+          return;
+        }
+        sendJson(response, 405, { error: "method not allowed" });
+        return;
+      }
+
       const queriedRunId = request.method === "GET" ? eventRoute(url.pathname) : undefined;
       if (queriedRunId !== undefined) {
-        const authorization = Array.isArray(request.headers.authorization)
-          ? request.headers.authorization[0]
-          : request.headers.authorization;
+        const authorization = singleHeader(request.headers, "authorization");
         if (!keyMatches(authorization, options.adminKey)) {
           sendJson(response, 401, { error: "unauthorized" });
           return;
@@ -216,6 +296,7 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
         ...fields,
         method: request.method ?? "UNKNOWN",
         rawUrl: request.url ?? "/",
+        normalizedPath: url.pathname,
         ...(request.headers.host ? { host: request.headers.host } : {}),
         ...(request.socket.remoteAddress ? { remoteAddress: request.socket.remoteAddress } : {}),
         headers: sanitizeHeaders(request.headers),
@@ -226,6 +307,31 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
       await store.append(event);
       if (body.tooLarge) {
         sendJson(response, 413, { error: "request body too large" });
+        return;
+      }
+      const outsideRunId = outsideActionRun(event.normalizedPath);
+      if (outsideRunId !== undefined && outsideRunId === fields.runId) {
+        const actionConfiguration = actionConfigurations.get(outsideRunId);
+        const suppliedSecret = singleHeader(request.headers, CANARY_HEADER);
+        if (!actionConfiguration || !secretMatches(suppliedSecret, actionConfiguration.brokeredSecret)) {
+          sendJson(response, 401, {
+            authorized: false,
+            normalizedPath: event.normalizedPath,
+          });
+          return;
+        }
+        const action: RecordedAction = {
+          operationId: `op_${randomBytes(18).toString("base64url")}`,
+          authorizedAt: new Date().toISOString(),
+          caseId: fields.caseId,
+          normalizedPath: event.normalizedPath,
+        };
+        actionConfiguration.actions.push(action);
+        sendJson(response, 200, {
+          authorized: true,
+          operationId: action.operationId,
+          normalizedPath: event.normalizedPath,
+        });
         return;
       }
       response.writeHead(204, { "cache-control": "no-store" });

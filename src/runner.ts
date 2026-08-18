@@ -22,6 +22,21 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function redactExactValue<T>(value: T, secret: string): T {
+  if (typeof value === "string") {
+    return value.replaceAll(secret, "<redacted-brokered-canary>") as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactExactValue(entry, secret)) as T;
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, redactExactValue(entry, secret)]),
+    ) as T;
+  }
+  return value;
+}
+
 function sandboxName(testId: string, runId: string): string {
   const normalized = testId.toLowerCase().replace(/[^a-z0-9-]/g, "-");
   return `vsc-${normalized}-${runId.slice(0, 8)}`.slice(0, 48);
@@ -72,14 +87,16 @@ export class HarnessRunner {
 
   async run(definition: TestDefinition): Promise<RunResult> {
     const runId = randomUUID();
-    const canary = `sbx_${randomBytes(18).toString("base64url")}`;
+    const correlationCanary = `corr_${randomBytes(18).toString("base64url")}`;
+    const brokeredCanary = `broker_${randomBytes(24).toString("base64url")}`;
     const canaryHeader = "x-sbx-harness-canary";
     const startedAt = new Date().toISOString();
     const built = definition.build({
       runId,
       testId: definition.id,
       observerBaseUrl: this.config.observerBaseUrl,
-      canary,
+      correlationCanary,
+      brokeredCanary,
       canaryHeader,
     });
     let sandbox: SandboxHandle | undefined;
@@ -109,19 +126,21 @@ export class HarnessRunner {
       await sandbox.writeFiles([{ path: remoteProbePath, content: guestProbe, mode: 0o700 }]);
 
       for (const probe of built.cases) {
-        const payload = Buffer.from(
-          JSON.stringify({
-            baseUrl: this.config.observerBaseUrl,
-            runId,
-            testId: definition.id,
-            caseId: probe.id,
-            canary,
-            method: probe.method,
-            rawPath: probe.rawPath,
-            headers: probe.headers ?? {},
-            timeoutMs: this.config.commandTimeoutMs,
-          }),
-        ).toString("base64url");
+        const serializedGuestConfiguration = JSON.stringify({
+          baseUrl: this.config.observerBaseUrl,
+          runId,
+          testId: definition.id,
+          caseId: probe.id,
+          canary: correlationCanary,
+          method: probe.method,
+          rawPath: probe.rawPath,
+          headers: probe.headers ?? {},
+          timeoutMs: this.config.commandTimeoutMs,
+        });
+        if (serializedGuestConfiguration.includes(brokeredCanary)) {
+          throw new Error("proof invalid: brokered canary entered the guest configuration");
+        }
+        const payload = Buffer.from(serializedGuestConfiguration).toString("base64url");
         const output = await sandbox.runCommand({
           cmd: "node",
           args: [remoteProbePath, payload],
@@ -138,7 +157,7 @@ export class HarnessRunner {
 
       await new Promise((resolve) => setTimeout(resolve, this.config.observerSettleMs));
       observerEvents = await this.observer.events(runId);
-      assessment = assessTest(built, observerEvents, canary, canaryHeader, {
+      assessment = assessTest(built, observerEvents, brokeredCanary, canaryHeader, {
         ...(this.allowControlRunId ? { allowControlRunId: this.allowControlRunId } : {}),
       });
       if (definition.id === "CONTROL-ALLOW" && assessment.verdict === "pass") {
@@ -156,9 +175,12 @@ export class HarnessRunner {
     const cleanup = await cleanupSandbox(sandbox);
     if (cleanup.errors.length > 0) {
       assessment.signals.push(...cleanup.errors.map((error) => `cleanup ${error}`));
+      assessment.verdict = "error";
+      assessment.summary = "Sandbox cleanup failed; stop further live testing and inspect the resource manually.";
+      runError ??= cleanup.errors.join("; ");
     }
     const completedAt = new Date().toISOString();
-    const evidence: EvidenceRecord = {
+    const rawEvidence: EvidenceRecord = {
       schemaVersion: 1,
       runId,
       testId: definition.id,
@@ -171,7 +193,8 @@ export class HarnessRunner {
         policy: built.policy,
         cases: built.cases,
         canaryHeader,
-        canarySha256: createHash("sha256").update(canary).digest("hex"),
+        correlationCanarySha256: createHash("sha256").update(correlationCanary).digest("hex"),
+        brokeredCanarySha256: createHash("sha256").update(brokeredCanary).digest("hex"),
         ...(this.allowControlRunId ? { allowControlRunId: this.allowControlRunId } : {}),
       },
       guestResults,
@@ -180,6 +203,7 @@ export class HarnessRunner {
       cleanup,
       ...(runError ? { error: runError } : {}),
     };
+    const evidence = redactExactValue(rawEvidence, brokeredCanary);
     const evidencePath = await this.writer.write(evidence);
     return { evidence, evidencePath };
   }

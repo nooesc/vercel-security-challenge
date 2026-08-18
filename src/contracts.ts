@@ -30,7 +30,8 @@ export interface BuildContext {
   runId: string;
   testId: string;
   observerBaseUrl: string;
-  canary: string;
+  correlationCanary: string;
+  brokeredCanary: string;
   canaryHeader: string;
 }
 
@@ -59,6 +60,7 @@ export interface ObserverEvent {
   canary: string;
   method: string;
   rawUrl: string;
+  normalizedPath: string;
   host?: string;
   remoteAddress?: string;
   headers: Record<string, string | string[]>;
@@ -97,7 +99,8 @@ export interface EvidenceRecord {
     policy: NetworkPolicy;
     cases: ProbeCase[];
     canaryHeader: string;
-    canarySha256: string;
+    correlationCanarySha256: string;
+    brokeredCanarySha256: string;
     allowControlRunId?: string;
   };
   guestResults: GuestCommandResult[];

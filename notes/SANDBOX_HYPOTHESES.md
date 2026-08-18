@@ -70,7 +70,7 @@ Only after baseline telemetry is reliable, run SBX-028 through SBX-030. Keep eac
 3. Two controlled HTTPS origins on distinct IPs and domains.
 4. An authoritative DNS zone with programmable A/AAAA/CNAME answers and query logging.
 5. HTTP/1.1, HTTP/2, WebSocket, raw TCP, UDP, and QUIC echo listeners.
-6. Unique non-secret canary values for credential-injection tests.
+6. Separate non-secret correlation canaries and synthetic brokered secrets that never enter the guest before a probe.
 7. Timestamped JSONL logging of policy, request, DNS, destination IP, TLS SNI, Host/authority, and observed headers.
 
 ## Sources
@@ -83,4 +83,3 @@ Only after baseline telemetry is reliable, run SBX-028 through SBX-030. Keep eac
 - Vercel persistence and snapshots: <https://vercel.com/kb/guide/vercel-sandbox-duration-and-persistence>
 - Firecracker design: <https://github.com/firecracker-microvm/firecracker/blob/main/docs/design.md>
 - Firecracker production host setup: <https://github.com/firecracker-microvm/firecracker/blob/main/docs/prod-host-setup.md>
-

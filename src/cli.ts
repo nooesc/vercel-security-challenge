@@ -149,7 +149,8 @@ function printDryRun(tests: TestDefinition[]): void {
       runId: `dry-run-${definition.id.toLowerCase()}`,
       testId: definition.id,
       observerBaseUrl,
-      canary: "DRY_RUN_CANARY_REDACTED",
+      correlationCanary: "DRY_RUN_CORRELATION_CANARY",
+      brokeredCanary: "DRY_RUN_BROKERED_CANARY_REDACTED",
       canaryHeader: "x-sbx-harness-canary",
     });
     return {
@@ -190,6 +191,10 @@ async function runLive(tests: TestDefinition[]): Promise<number> {
     console.log(`evidence: ${result.evidencePath}`);
     for (const signal of assessment.signals) console.log(`signal:   ${signal}`);
     if (isFailureVerdict(assessment.verdict)) failed = true;
+    if (result.evidence.cleanup.errors.length > 0) {
+      console.error("cleanup failed; halting subsequent live tests");
+      return 1;
+    }
   }
 
   return failed ? 1 : 0;

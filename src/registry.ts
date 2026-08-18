@@ -22,7 +22,7 @@ function canaryPolicy(
       [observerHost(context)]: [
         {
           match,
-          transform: [{ headers: { [context.canaryHeader]: context.canary } }],
+          transform: [{ headers: { [context.canaryHeader]: context.brokeredCanary } }],
         },
       ],
     },
@@ -153,11 +153,11 @@ const pathNormalization: TestDefinition = {
         },
         {
           id: "encoded-slash",
-          description: "Encoded separator in an apparent dot segment",
+          description: "Encoded separator control remains within the backend's canonical path",
           method: "GET",
           rawPath: `${allowedPrefix}..%2foutside`,
           expectedNetwork: "hit",
-          expectedCanary: "absent",
+          expectedCanary: "present",
         },
         {
           id: "outside-control",
@@ -219,14 +219,14 @@ const queryAmbiguity: TestDefinition = {
         },
         {
           id: "duplicate-unprivileged-first",
-          description: "Duplicate key with an unprivileged first value",
+          description: "Duplicate key uses documented any-matching-value semantics",
           method: "GET",
           rawPath: `${path}?tier=unprivileged&tier=privileged`,
           expectedNetwork: "hit",
-          expectedCanary: "absent",
+          expectedCanary: "present",
         },
       ],
-      notes: ["A duplicate-key signal is a parser differential candidate; confirm the target application's first/last-value semantics before reporting."],
+      notes: ["Vercel documents that any matching value satisfies a query matcher when a key has multiple values."],
     };
   },
 };

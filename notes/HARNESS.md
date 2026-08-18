@@ -18,9 +18,9 @@ public observer (researcher-controlled, outside the microVM)
 controller assessment + append-only JSONL evidence
 ```
 
-The controller is the only component with Vercel credentials and the observer admin key. The guest receives a random, non-secret run canary but never receives the admin key. The observer's probe endpoint must be publicly reachable because a Vercel Sandbox cannot reach the controller's localhost. Its event-read API is protected by `OBSERVER_ADMIN_KEY`.
+The controller is the only component with Vercel credentials, the observer admin key, and the synthetic brokered secret. The guest receives a separate random, non-secret correlation canary but never receives the admin key or brokered secret. The observer's probe endpoint must be publicly reachable because a Vercel Sandbox cannot reach the controller's localhost. Its event-read API is protected by `OBSERVER_ADMIN_KEY`.
 
-Each selected test gets a new run ID, canary, sandbox, and policy. The controller copies `guest/http-probe.mjs` into the sandbox, runs each case, waits briefly for observer delivery, retrieves events, assesses them against declared expectations, appends evidence, and then attempts both `stop()` and `delete()` in cleanup.
+Each selected test gets a new run ID, correlation canary, brokered canary, sandbox, and policy. The controller copies `guest/http-probe.mjs` into the sandbox, runs each case, waits briefly for observer delivery, retrieves events, assesses them against declared expectations, appends evidence, and then attempts both `stop()` and `delete()` in cleanup.
 
 ## Install and inspect without credentials
 
@@ -34,7 +34,7 @@ npm run harness -- --list
 npm run harness -- --all --dry-run
 ```
 
-`--dry-run` does not contact Vercel or the observer and does not require any credential. It prints the policies and cases with a redacted placeholder canary. A configured `OBSERVER_BASE_URL` is used only to derive the observer hostname; otherwise the reserved placeholder `https://observer.example.invalid` is used.
+`--dry-run` does not contact Vercel or the observer and does not require any credential. It prints the policies and cases with redacted placeholder canaries. A configured `OBSERVER_BASE_URL` is used only to derive the observer hostname; otherwise the reserved placeholder `https://observer.example.invalid` is used.
 
 Selections are explicit and case-insensitive. `--test` is repeatable, while `--all` and `--test` are intentionally mutually exclusive:
 
@@ -116,7 +116,7 @@ Live tests run sequentially. The process exits nonzero for `candidate`, `indeter
 
 ## Evidence and verdicts
 
-Each JSONL record includes the test/run IDs, generated policy and probe cases, a SHA-256 digest of the random canary, guest command output, independently recorded observer events, assessment signals, sandbox identity, and cleanup results. Observer events also retain the raw, non-secret canary and request URL so the controller can correlate and assess an observation; never substitute a real credential or sensitive value for this generated marker.
+Each JSONL record includes the test/run IDs, generated policy and probe cases, SHA-256 digests of both generated canaries, guest command output, independently recorded observer events, assessment signals, sandbox identity, and cleanup results. Observer events retain the raw, non-secret correlation canary and request URL. Credential tests use a separate synthetic brokered value that is never included in the guest probe configuration. The generic evidence writer redacts that exact synthetic value from the policy, guest output, and copied observer events before persistence; the observer's raw JSONL remains private. Never substitute a real credential or sensitive value for either marker.
 
 | Verdict | Meaning | Next action |
 | --- | --- | --- |

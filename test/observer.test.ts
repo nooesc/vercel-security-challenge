@@ -51,7 +51,7 @@ describe("controlled observer", () => {
       __sbx_case: "trailing-dot",
       __sbx_canary: "canary-value",
     });
-    const response = await fetch(`${observer.baseUrl}/arbitrary/probe?${query}`, {
+    const response = await fetch(`${observer.baseUrl}/arbitrary/outside?${query}`, {
       method: "POST",
       headers: {
         authorization: "Bearer do-not-record",
@@ -79,6 +79,7 @@ describe("controlled observer", () => {
       caseId: "trailing-dot",
       canary: "canary-value",
       method: "POST",
+      normalizedPath: "/arbitrary/outside",
       bodyLength: Buffer.byteLength(body),
       bodySha256: createHash("sha256").update(body).digest("hex"),
     });
@@ -92,6 +93,70 @@ describe("controlled observer", () => {
     const lines = (await readFile(dataPath, "utf8")).trim().split("\n");
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "{}")).toEqual(event);
+  });
+
+  it("executes the explicit outside action only with the controller-registered credential", async () => {
+    const { observer } = await start();
+    const runId = "run-action-001";
+    const brokeredSecret = "brokered-test-secret-at-least-24-characters";
+    const adminHeaders = { authorization: `Bearer ${ADMIN_KEY}` };
+    expect(
+      (
+        await fetch(`${observer.baseUrl}/v1/runs/${runId}/action-config`, {
+          method: "POST",
+          headers: { "x-observer-action-secret": brokeredSecret },
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await fetch(`${observer.baseUrl}/v1/runs/${runId}/actions`, {
+          headers: { authorization: "Bearer incorrect-key" },
+        })
+      ).status,
+    ).toBe(401);
+    const registration = await fetch(`${observer.baseUrl}/v1/runs/${runId}/action-config`, {
+      method: "POST",
+      headers: {
+        ...adminHeaders,
+        "x-observer-action-secret": brokeredSecret,
+      },
+    });
+    expect(registration.status).toBe(201);
+
+    const query = new URLSearchParams({
+      __sbx_run: runId,
+      __sbx_test: "SBX-013-POC",
+      __sbx_case: "outside-control",
+      __sbx_canary: "non-secret-correlation-value",
+    });
+    const outsideUrl = `${observer.baseUrl}/v1/probe/${runId}/outside?${query}`;
+    const denied = await fetch(outsideUrl);
+    expect(denied.status).toBe(401);
+    await expect(denied.json()).resolves.toMatchObject({ authorized: false });
+
+    query.set("__sbx_case", "encoded-dotdot");
+    const authorized = await fetch(`${observer.baseUrl}/v1/probe/${runId}/outside?${query}`, {
+      headers: { "x-sbx-harness-canary": brokeredSecret },
+    });
+    expect(authorized.status).toBe(200);
+    const actionResponse = (await authorized.json()) as { authorized: boolean; operationId: string };
+    expect(actionResponse.authorized).toBe(true);
+    expect(actionResponse.operationId).toMatch(/^op_[A-Za-z0-9_-]+$/);
+
+    const actionQuery = await fetch(`${observer.baseUrl}/v1/runs/${runId}/actions`, {
+      headers: adminHeaders,
+    });
+    expect(actionQuery.status).toBe(200);
+    await expect(actionQuery.json()).resolves.toEqual({
+      actions: [
+        expect.objectContaining({
+          operationId: actionResponse.operationId,
+          caseId: "encoded-dotdot",
+          normalizedPath: `/v1/probe/${runId}/outside`,
+        }),
+      ],
+    });
   });
 
   it("isolates event queries by run and rejects oversized probe bodies", async () => {
