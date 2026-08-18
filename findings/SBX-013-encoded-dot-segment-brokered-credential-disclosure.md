@@ -3,10 +3,14 @@
 ## Submission metadata
 
 - Asset: Vercel Sandbox network firewall / credentials brokering
+- Vulnerability class: Networking and Firewall
+- Vercel Team ID: `<replace after HackerOne-alias reproduction>`
+- Vercel Project ID: `<replace after HackerOne-alias reproduction>`
 - Suggested severity: Medium; impact can be higher when the outside route performs a sensitive operation
 - Primary weakness: [CWE-647 — Use of Non-Canonical URL Paths for Authorization Decisions](https://cwe.mitre.org/data/definitions/647.html)
 - Related weakness: [CWE-551 — Authorization Before Parsing and Canonicalization](https://cwe.mitre.org/data/definitions/551.html)
 - Test environment: `@vercel/sandbox@3.0.0`, controller Node.js `v25.6.0`, controlled Node.js HTTP observer, Vercel region `iad1`
+- Severity acknowledgement: I understand the program's severity-inflation bounty penalty and am requesting Medium based only on the demonstrated authenticated transform-scope violation.
 
 ## Summary
 
@@ -126,6 +130,8 @@ Successful output includes:
 ```
 
 ## Correlatable evidence
+
+The following preliminary runs used the initial development account. Before submission, reproduce from the required HackerOne-alias Vercel account and replace the submission metadata/evidence table with its `team_…`, `prj_…`, and `sbx_…` identifiers.
 
 The hardened authenticated-action proof reproduced on two fresh, non-persistent Vercel sandboxes:
 

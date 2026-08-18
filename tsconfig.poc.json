@@ -3,6 +3,14 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["pocs/SBX-013/**/*.ts"],
+  "include": [
+    "pocs/SBX-006/**/*.ts",
+    "pocs/SBX-013/**/*.ts",
+    "pocs/SBX-008/**/*.ts",
+    "pocs/SBX-009/**/*.ts",
+    "pocs/SBX-010/**/*.ts",
+    "pocs/SBX-018/**/*.ts",
+    "pocs/NEXT-WAVE/**/*.ts"
+  ],
   "exclude": []
 }

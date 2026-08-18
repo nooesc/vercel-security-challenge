@@ -44,6 +44,7 @@ npm run harness -- --test CONTROL-ALLOW --test CONTROL-DENY
 Do not point `OBSERVER_BASE_URL` at localhost for a live Sandbox run: localhost inside the microVM is not this controller. Put TLS or a trusted HTTPS reverse proxy in front of the observer and keep `OBSERVER_ADMIN_KEY` private.
 
 See [notes/HARNESS.md](notes/HARNESS.md) for architecture, authentication options, operating steps, verdict semantics, and the currently automated subset of the 30-case hypothesis matrix.
+Before any live run or submission, also read [notes/HACKERONE_PROGRAM_POLICY.md](notes/HACKERONE_PROGRAM_POLICY.md). Final eligible evidence must come from the required HackerOne-alias Vercel account.
 
 ## Safety rules
 
@@ -78,4 +79,5 @@ Selecting `CONTROL-DENY` automatically schedules `CONTROL-ALLOW` first in the sa
 | ID | Target | Program | Status |
 | --- | --- | --- | --- |
 | FLAGS-001 | `vercel/flags` | Vercel OSS | Reproduced; draft prepared |
-| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Live reproduced; submission draft prepared |
+| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Preliminary live reproduction; rerun on alias account required |
+| SBX-018 | Vercel Sandbox live policy updates | Sandbox challenge | Medium candidate; hardened alias-account reproduction pending |

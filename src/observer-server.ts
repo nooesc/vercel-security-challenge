@@ -8,6 +8,10 @@ import type { ObserverEvent } from "./contracts.js";
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 const CANARY_HEADER = "x-sbx-harness-canary";
 const ACTION_SECRET_HEADER = "x-observer-action-secret";
+const REDIRECT_TARGET_HEADER = "x-observer-redirect-target";
+const VHOST_HEADER = "x-observer-vhost";
+
+type AdminResource = "action-config" | "actions" | "redirect-config" | "vhost-config" | "vhost-actions";
 
 interface RecordedAction {
   operationId: string;
@@ -18,6 +22,12 @@ interface RecordedAction {
 
 interface ActionConfiguration {
   brokeredSecret: string;
+  actions: RecordedAction[];
+}
+
+interface VhostConfiguration {
+  expectedHost: string;
+  expectedSecret?: string;
   actions: RecordedAction[];
 }
 
@@ -190,13 +200,13 @@ function eventRoute(pathname: string): string | undefined {
   }
 }
 
-function actionAdminRoute(pathname: string): { runId: string; resource: "action-config" | "actions" } | undefined {
-  const match = /^\/v1\/runs\/([^/]+)\/(action-config|actions)$/.exec(pathname);
+function adminRoute(pathname: string): { runId: string; resource: AdminResource } | undefined {
+  const match = /^\/v1\/runs\/([^/]+)\/(action-config|actions|redirect-config|vhost-config|vhost-actions)$/.exec(pathname);
   if (!match?.[1] || !match[2]) return undefined;
   try {
     return {
       runId: decodeURIComponent(match[1]),
-      resource: match[2] as "action-config" | "actions",
+      resource: match[2] as AdminResource,
     };
   } catch {
     return undefined;
@@ -213,6 +223,47 @@ function outsideActionRun(pathname: string): string | undefined {
   }
 }
 
+function redirectRun(pathname: string): string | undefined {
+  const match = /^\/v1\/probe\/([^/]+)\/redirect$/.exec(pathname);
+  if (!match?.[1]) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+function vhostActionRun(pathname: string): string | undefined {
+  const match = /^\/v1\/probe\/([^/]+)\/vhost-action$/.exec(pathname);
+  if (!match?.[1]) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+function validRedirectTarget(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const target = new URL(raw);
+    if (target.protocol !== "https:" || target.username || target.password || target.hash) return undefined;
+    return target.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizedHostname(raw: string | undefined): string | undefined {
+  if (!raw || raw.includes("@") || raw.includes("/") || raw.includes("?") || raw.includes("#")) return undefined;
+  try {
+    const parsed = new URL(`https://${raw}/`);
+    return parsed.hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 export async function startObserverServer(options: ObserverServerOptions): Promise<RunningObserverServer> {
   if (options.adminKey.length < 24) throw new Error("observer admin key must contain at least 24 characters");
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
@@ -224,6 +275,8 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
   const port = options.port ?? 0;
   const store = new JsonlObserverStore(options.dataPath);
   const actionConfigurations = new Map<string, ActionConfiguration>();
+  const redirectConfigurations = new Map<string, string>();
+  const vhostConfigurations = new Map<string, VhostConfiguration>();
   await store.initialize();
 
   const server = createServer((request, response) => {
@@ -239,31 +292,76 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
         return;
       }
 
-      const actionAdmin = actionAdminRoute(url.pathname);
-      if (actionAdmin) {
+      const admin = adminRoute(url.pathname);
+      if (admin) {
         const authorization = singleHeader(request.headers, "authorization");
         if (!keyMatches(authorization, options.adminKey)) {
           sendJson(response, 401, { error: "unauthorized" });
           return;
         }
-        if (request.method === "POST" && actionAdmin.resource === "action-config") {
+        if (request.method === "POST" && admin.resource === "action-config") {
           const brokeredSecret = singleHeader(request.headers, ACTION_SECRET_HEADER);
           if (!brokeredSecret || brokeredSecret.length < 24) {
             sendJson(response, 400, { error: `${ACTION_SECRET_HEADER} must contain at least 24 characters` });
             return;
           }
-          actionConfigurations.set(actionAdmin.runId, { brokeredSecret, actions: [] });
+          actionConfigurations.set(admin.runId, { brokeredSecret, actions: [] });
           sendJson(response, 201, { configured: true });
           return;
         }
-        if (request.method === "GET" && actionAdmin.resource === "actions") {
+        if (request.method === "GET" && admin.resource === "actions") {
           sendJson(response, 200, {
-            actions: actionConfigurations.get(actionAdmin.runId)?.actions ?? [],
+            actions: actionConfigurations.get(admin.runId)?.actions ?? [],
           });
           return;
         }
-        if (request.method === "DELETE" && actionAdmin.resource === "action-config") {
-          actionConfigurations.delete(actionAdmin.runId);
+        if (request.method === "DELETE" && admin.resource === "action-config") {
+          actionConfigurations.delete(admin.runId);
+          response.writeHead(204, { "cache-control": "no-store" });
+          response.end();
+          return;
+        }
+        if (request.method === "POST" && admin.resource === "redirect-config") {
+          const target = validRedirectTarget(singleHeader(request.headers, REDIRECT_TARGET_HEADER));
+          if (!target) {
+            sendJson(response, 400, { error: `${REDIRECT_TARGET_HEADER} must be an absolute HTTPS URL without credentials or a fragment` });
+            return;
+          }
+          redirectConfigurations.set(admin.runId, target);
+          sendJson(response, 201, { configured: true });
+          return;
+        }
+        if (request.method === "DELETE" && admin.resource === "redirect-config") {
+          redirectConfigurations.delete(admin.runId);
+          response.writeHead(204, { "cache-control": "no-store" });
+          response.end();
+          return;
+        }
+        if (request.method === "POST" && admin.resource === "vhost-config") {
+          const expectedHost = normalizedHostname(singleHeader(request.headers, VHOST_HEADER));
+          if (!expectedHost) {
+            sendJson(response, 400, { error: `${VHOST_HEADER} must be a valid hostname or host:port authority` });
+            return;
+          }
+          const expectedSecret = singleHeader(request.headers, ACTION_SECRET_HEADER);
+          if (expectedSecret !== undefined && expectedSecret.length < 24) {
+            sendJson(response, 400, { error: `${ACTION_SECRET_HEADER} must contain at least 24 characters when supplied` });
+            return;
+          }
+          vhostConfigurations.set(admin.runId, {
+            expectedHost,
+            ...(expectedSecret ? { expectedSecret } : {}),
+            actions: [],
+          });
+          sendJson(response, 201, { configured: true });
+          return;
+        }
+        if (request.method === "GET" && admin.resource === "vhost-actions") {
+          sendJson(response, 200, { actions: vhostConfigurations.get(admin.runId)?.actions ?? [] });
+          return;
+        }
+        if (request.method === "DELETE" && admin.resource === "vhost-config") {
+          vhostConfigurations.delete(admin.runId);
           response.writeHead(204, { "cache-control": "no-store" });
           response.end();
           return;
@@ -332,6 +430,67 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
           operationId: action.operationId,
           normalizedPath: event.normalizedPath,
         });
+        return;
+      }
+      const configuredRedirectRun = redirectRun(event.normalizedPath);
+      if (configuredRedirectRun !== undefined && configuredRedirectRun === fields.runId) {
+        const target = redirectConfigurations.get(configuredRedirectRun);
+        if (!target) {
+          sendJson(response, 404, { error: "redirect not configured" });
+          return;
+        }
+        response.writeHead(302, {
+          "cache-control": "no-store",
+          location: target,
+        });
+        response.end();
+        return;
+      }
+      const configuredVhostRun = vhostActionRun(event.normalizedPath);
+      if (configuredVhostRun !== undefined && configuredVhostRun === fields.runId) {
+        const configuration = vhostConfigurations.get(configuredVhostRun);
+        const observedHost = normalizedHostname(request.headers.host);
+        if (!configuration || observedHost !== configuration.expectedHost) {
+          sendJson(response, 421, {
+            selected: false,
+            normalizedPath: event.normalizedPath,
+          });
+          return;
+        }
+        if (
+          configuration.expectedSecret !== undefined &&
+          !secretMatches(singleHeader(request.headers, CANARY_HEADER), configuration.expectedSecret)
+        ) {
+          sendJson(response, 401, {
+            selected: true,
+            authorized: false,
+            normalizedPath: event.normalizedPath,
+          });
+          return;
+        }
+        const action: RecordedAction = {
+          operationId: `vhost_${randomBytes(18).toString("base64url")}`,
+          authorizedAt: new Date().toISOString(),
+          caseId: fields.caseId,
+          normalizedPath: event.normalizedPath,
+        };
+        configuration.actions.push(action);
+        sendJson(response, 200, {
+          selected: true,
+          authorized: true,
+          operationId: action.operationId,
+          normalizedPath: event.normalizedPath,
+        });
+        return;
+      }
+      if (/^\/v1\/probe\/[^/]+\/policy-update(?:-multi)?$/.test(event.normalizedPath)) {
+        response.writeHead(204, {
+          "cache-control": "no-store",
+          "content-length": "0",
+          connection: "keep-alive",
+          "keep-alive": "timeout=60",
+        });
+        response.end();
         return;
       }
       response.writeHead(204, { "cache-control": "no-store" });

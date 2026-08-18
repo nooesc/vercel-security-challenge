@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { request as httpRequest } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,6 +32,27 @@ async function start(maxBodyBytes?: number): Promise<{ observer: RunningObserver
 async function events(baseUrl: string, runId: string, key = ADMIN_KEY): Promise<Response> {
   return fetch(`${baseUrl}/v1/runs/${encodeURIComponent(runId)}/events`, {
     headers: { authorization: `Bearer ${key}` },
+  });
+}
+
+async function requestWithHost(url: string, host: string): Promise<{ status: number; body: string }> {
+  const parsed = new URL(url);
+  return new Promise((resolve, reject) => {
+    const request = httpRequest({
+      hostname: parsed.hostname,
+      port: parsed.port,
+      path: `${parsed.pathname}${parsed.search}`,
+      headers: { host },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on("end", () => resolve({
+        status: response.statusCode ?? 0,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    request.on("error", reject);
+    request.end();
   });
 }
 
@@ -157,6 +179,163 @@ describe("controlled observer", () => {
         }),
       ],
     });
+  });
+
+  it("serves only an authenticated, controller-configured HTTPS redirect", async () => {
+    const { observer } = await start();
+    const runId = "run-redirect-001";
+    const redirectTarget = "https://controlled-b.example/v1/probe/run-redirect-001/target";
+    expect(
+      (
+        await fetch(`${observer.baseUrl}/v1/runs/${runId}/redirect-config`, {
+          method: "POST",
+          headers: { "x-observer-redirect-target": redirectTarget },
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await fetch(`${observer.baseUrl}/v1/runs/${runId}/redirect-config`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${ADMIN_KEY}`,
+            "x-observer-redirect-target": "http://insecure.example/target",
+          },
+        })
+      ).status,
+    ).toBe(400);
+    const registration = await fetch(`${observer.baseUrl}/v1/runs/${runId}/redirect-config`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${ADMIN_KEY}`,
+        "x-observer-redirect-target": redirectTarget,
+      },
+    });
+    expect(registration.status).toBe(201);
+
+    const query = new URLSearchParams({
+      __sbx_run: runId,
+      __sbx_test: "SBX-007",
+      __sbx_case: "redirect-source",
+      __sbx_canary: "redirect-correlation",
+    });
+    const redirect = await fetch(`${observer.baseUrl}/v1/probe/${runId}/redirect?${query}`, {
+      redirect: "manual",
+    });
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe(redirectTarget);
+
+    const deletion = await fetch(`${observer.baseUrl}/v1/runs/${runId}/redirect-config`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${ADMIN_KEY}` },
+    });
+    expect(deletion.status).toBe(204);
+    expect(
+      (
+        await fetch(`${observer.baseUrl}/v1/probe/${runId}/redirect?${query}`, {
+          redirect: "manual",
+        })
+      ).status,
+    ).toBe(404);
+  });
+
+  it("executes a vhost-specific action only when the observed Host selects it", async () => {
+    const { observer } = await start();
+    const runId = "run-vhost-001";
+    const vhostSecret = "vhost-test-secret-at-least-24-characters";
+    const adminHeaders = { authorization: `Bearer ${ADMIN_KEY}` };
+    const registration = await fetch(`${observer.baseUrl}/v1/runs/${runId}/vhost-config`, {
+      method: "POST",
+      headers: {
+        ...adminHeaders,
+        "x-observer-vhost": "b.controlled.example:443",
+        "x-observer-action-secret": vhostSecret,
+      },
+    });
+    expect(registration.status).toBe(201);
+
+    const query = new URLSearchParams({
+      __sbx_run: runId,
+      __sbx_test: "SBX-008",
+      __sbx_case: "sni-a-host-a",
+      __sbx_canary: "vhost-correlation",
+    });
+    const path = `/v1/probe/${runId}/vhost-action?${query}`;
+    const wrongVhost = await requestWithHost(new URL(path, observer.baseUrl).toString(), "a.controlled.example");
+    expect(wrongVhost.status).toBe(421);
+    expect(JSON.parse(wrongVhost.body)).toMatchObject({ selected: false });
+
+    query.set("__sbx_case", "sni-a-host-b-no-credential");
+    const selectedButUnauthorized = await requestWithHost(
+      new URL(`/v1/probe/${runId}/vhost-action?${query}`, observer.baseUrl).toString(),
+      "b.controlled.example",
+    );
+    expect(selectedButUnauthorized.status).toBe(401);
+    expect(JSON.parse(selectedButUnauthorized.body)).toMatchObject({
+      selected: true,
+      authorized: false,
+    });
+
+    query.set("__sbx_case", "sni-a-host-b");
+    const authorizedUrl = new URL(`/v1/probe/${runId}/vhost-action?${query}`, observer.baseUrl);
+    const selected = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const request = httpRequest({
+        hostname: authorizedUrl.hostname,
+        port: authorizedUrl.port,
+        path: `${authorizedUrl.pathname}${authorizedUrl.search}`,
+        headers: {
+          host: "b.controlled.example",
+          "x-sbx-harness-canary": vhostSecret,
+        },
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        response.on("end", () => resolve({
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString("utf8"),
+        }));
+      });
+      request.on("error", reject);
+      request.end();
+    });
+    expect(selected.status).toBe(200);
+    const selectedBody = JSON.parse(selected.body) as { selected: boolean; operationId: string };
+    expect(selectedBody).toMatchObject({ selected: true, authorized: true });
+    expect(selectedBody.operationId).toMatch(/^vhost_[A-Za-z0-9_-]+$/);
+
+    const actions = await fetch(`${observer.baseUrl}/v1/runs/${runId}/vhost-actions`, {
+      headers: adminHeaders,
+    });
+    await expect(actions.json()).resolves.toEqual({
+      actions: [
+        expect.objectContaining({
+          operationId: selectedBody.operationId,
+          caseId: "sni-a-host-b",
+        }),
+      ],
+    });
+  });
+
+  it("keeps the controlled policy-update endpoint alive with explicit framing", async () => {
+    const { observer } = await start();
+    const query = new URLSearchParams({
+      __sbx_run: "policy-run",
+      __sbx_test: "SBX-018-POC",
+      __sbx_case: "existing-tls-after-deny",
+      __sbx_canary: "policy-correlation",
+    });
+    const response = await fetch(
+      `${observer.baseUrl}/v1/probe/policy-run/policy-update?${query}`,
+    );
+    expect(response.status).toBe(204);
+    expect(response.headers.get("content-length")).toBe("0");
+    expect(response.headers.get("connection")).toBe("keep-alive");
+    expect(response.headers.get("keep-alive")).toBe("timeout=60");
+    const multiResponse = await fetch(
+      `${observer.baseUrl}/v1/probe/policy-run/policy-update-multi?${query}`,
+    );
+    expect(multiResponse.status).toBe(204);
+    expect(multiResponse.headers.get("content-length")).toBe("0");
   });
 
   it("isolates event queries by run and rejects oversized probe bodies", async () => {
