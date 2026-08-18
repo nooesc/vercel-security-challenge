@@ -1,0 +1,27 @@
+{
+  "name": "vercel-security-challenge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic, evidence-first harness for authorized Vercel Sandbox boundary research",
+  "scripts": {
+    "harness": "tsx src/cli.ts",
+    "observer": "tsx src/observer-cli.ts",
+    "test": "vitest run --dir test",
+    "test:watch": "vitest --dir test",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.18"
+  },
+  "dependencies": {
+    "@vercel/sandbox": "3.0.0",
+    "dotenv": "16.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.12",
+    "tsx": "4.20.6",
+    "typescript": "5.8.3",
+    "vitest": "3.2.7"
+  }
+}
