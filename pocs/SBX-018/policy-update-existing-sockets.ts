@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { Sandbox, type Command, type NetworkPolicy } from "@vercel/sandbox";
 import { HttpObserverClient } from "../../src/observer-client.js";
 import type { ObserverEvent } from "../../src/contracts.js";
+import { waitUntil } from "../../src/timing.js";
 
 const testId = "SBX-018-MULTI-POC";
 const brokeredHeader = "x-sbx-harness-canary";
@@ -115,11 +116,6 @@ async function waitForSandboxFile(sandbox: Sandbox, path: string, timeoutMs: num
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
   throw new Error(`timed out waiting for ${path}`);
-}
-
-async function waitUntil(epochMs: number): Promise<void> {
-  const remaining = epochMs - Date.now();
-  if (remaining > 0) await new Promise((resolveWait) => setTimeout(resolveWait, remaining));
 }
 
 function socketEvidence(state: SocketState): Record<string, unknown> {

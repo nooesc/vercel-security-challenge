@@ -15,7 +15,7 @@ The outside endpoint returns only an opaque operation ID. It never reflects the 
 ## Prerequisites
 
 - Node.js 20.18 or newer;
-- authenticated access to a researcher-owned Vercel Sandbox project;
+- authenticated access to the HackerOne-alias Vercel Sandbox project required by the challenge policy;
 - a temporary HTTPS URL forwarding to local port 8787 (Cloudflare Quick Tunnel or an equivalent researcher-controlled forwarder).
 
 ## Reproduce
@@ -53,6 +53,8 @@ export OBSERVER_BASE_URL="https://<temporary-controlled-host>"
 npx sandbox login
 npx tsx pocs/SBX-013/encoded-dot-segment.ts
 ```
+
+Before relying on the result, confirm the Sandbox CLI authenticated the required `<username>@wearehackerone.com` account. The user who submits the report must personally execute and verify the live PoC; do not submit an unverified automated result.
 
 If using explicit non-interactive credentials, set `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, and `VERCEL_PROJECT_ID` together instead of the device login.
 

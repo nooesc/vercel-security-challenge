@@ -9,7 +9,7 @@ Source supplied from the private HackerOne posting on 2026-08-18. This note is a
 - Reports and working PoCs remain private. Do not publish reproduction details, logs, identifiers, or exploit code before the disclosure conditions are met.
 - The repository must remain private with no outside collaborators. HackerOne is the submission channel.
 
-Current account check (2026-08-18): the Sandbox CLI session used for initial research is **not** authenticated with a `@wearehackerone.com` alias. Do not perform final eligible reproductions or submit its account IDs as the final testing account. Re-authenticate with the research alias, then capture the new `team_…`, `prj_…`, and `sbx_…` values.
+Current account check (2026-08-18 22:46 UTC): the Sandbox CLI is authenticated as `swve@wearehackerone.com`. The verified alias-owned scope is team `team_n98ERpVwV7HqmWRudAyK8sXQ` and project `prj_CyyVykdN06Nrkla6KidZcecLgbCa`. Initial development-account artifacts remain preliminary only; final evidence must use this alias scope and record each fresh `sbx_…` identifier.
 
 Repository check (2026-08-18): `nooesc/vercel-security-challenge` is private and lists only its owner as a collaborator. Preserve that state through the embargo.
 
@@ -54,5 +54,5 @@ Repository check (2026-08-18): `nooesc/vercel-security-challenge` is private and
 ## Current report mapping
 
 - `SBX-013`: suggested Medium. It demonstrates authenticated transform use on a canonical route outside the configured path scope, with a non-reflecting controlled action.
-- `SBX-018`: suggested Medium if hardened reproduction holds. It demonstrates stale network-policy/transform state after an acknowledged live `deny-all` update; do not claim guest credential retrieval.
+- `SBX-018`: hold/do not submit. A preliminary development-account signal suggested stale network-policy/transform state, but five conclusive hardened alias-account runs (15 retained sockets) all enforced `deny-all`; the candidate did not reproduce.
 - `SBX-008` plain SNI behavior: do not submit. Current documentation explains SNI-only enforcement for end-to-end TLS traffic.

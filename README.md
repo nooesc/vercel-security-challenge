@@ -79,5 +79,5 @@ Selecting `CONTROL-DENY` automatically schedules `CONTROL-ALLOW` first in the sa
 | ID | Target | Program | Status |
 | --- | --- | --- | --- |
 | FLAGS-001 | `vercel/flags` | Vercel OSS | Reproduced; draft prepared |
-| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Preliminary live reproduction; rerun on alias account required |
-| SBX-018 | Vercel Sandbox live policy updates | Sandbox challenge | Medium candidate; hardened alias-account reproduction pending |
+| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Reproduced twice on HackerOne-alias account; report/attachments ready pending researcher personal verification |
+| SBX-018 | Vercel Sandbox live policy updates | Sandbox challenge | Historical development-account signal; 0/5 hardened alias runs reproduced it, so hold/do not submit |

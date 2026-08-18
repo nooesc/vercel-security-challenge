@@ -1,8 +1,8 @@
 # live deny-all update does not revoke some existing credential-transform TLS connections
 
-> **NOT READY FOR SUBMISSION**
+> **HOLD — DO NOT SUBMIT**
 >
-> This is a private draft based on a preliminary development-account reproduction. Do not submit until (1) the hardened three-socket PoC reproduces from a fresh HackerOne-alias Vercel account, (2) the researcher personally verifies the live PoC and impact, (3) the required alias-account Team, Project, and Sandbox IDs replace every placeholder below, and (4) the working PoC ZIP and alias-run evidence are attached.
+> This private draft records one preliminary development-account signal. Five conclusive hardened runs from the required HackerOne-alias account blocked all 15 retained sockets after `deny-all`; the candidate did not reproduce. Do not submit without a new, independently controlled eligible-account reproduction.
 
 ## Submission metadata
 
@@ -10,15 +10,14 @@
 - Vulnerability class: Networking and Firewall; stale authorization after policy revocation
 - Suggested weakness: CWE-284 (Improper Access Control). This label is secondary to the demonstrated network-policy differential.
 - Suggested severity: **Medium only**
-- HackerOne-alias account: `<researcher-alias@wearehackerone.com>`
-- Vercel Team ID: `<team_REPLACE_FROM_ALIAS_RUN>`
-- Vercel Project ID: `<prj_REPLACE_FROM_ALIAS_RUN>`
-- Primary alias-run Sandbox ID: `<sbx_REPLACE_FROM_ALIAS_MULTI_SOCKET_RUN>`
-- Additional cited alias-run Sandbox IDs: `<sbx_REPLACE_EACH_FRESH_REPRODUCTION>`
-- Alias-run region: `<REPLACE>`
-- Sandbox image/runtime: `<REPLACE_WITH_EXACT_ALIAS_RUN_IMAGE_AND_GUEST_RUNTIME>`
-- SDK/controller runtime: `@vercel/sandbox@3.0.0`; `<REPLACE_WITH_EXACT_CONTROLLER_NODE_VERSION>`
-- Submission state: **NOT READY — alias-account multi-socket reproduction and personal verification pending**
+- HackerOne-alias account: `swve@wearehackerone.com`
+- Vercel Team ID: `team_n98ERpVwV7HqmWRudAyK8sXQ`
+- Vercel Project ID: `prj_CyyVykdN06Nrkla6KidZcecLgbCa`
+- Primary alias-run Sandbox ID: not applicable; no hardened alias run reproduced the candidate
+- Alias-run region: `iad1`
+- Sandbox image/runtime: not promoted to submission metadata because the finding is held
+- SDK/controller runtime: `@vercel/sandbox@3.0.0`; Node.js `v25.6.0`
+- Submission state: **HOLD — 0/5 conclusive hardened alias runs reproduced the preliminary signal**
 
 ### Severity acknowledgement
 
@@ -119,7 +118,7 @@ connect EHOSTUNREACH 104.16.230.132:443
 
 The observer recorded no fresh-connection event. This avoids treating DNS denial alone as the negative control.
 
-The current three-socket PoC strengthens ordering further: it proves a fresh same-IP connection is blocked **before** triggering any retained socket. The preliminary candidate above did not contain that pre-trigger barrier, so this draft remains not ready until the hardened run reproduces.
+The three-socket PoC strengthens ordering further: it proves a fresh same-IP connection is blocked **before** triggering any retained socket. Five conclusive alias-account runs passed that barrier and then blocked all 15 retained sockets. The preliminary candidate did not reproduce, so this draft is held rather than awaiting submission.
 
 ### Credential handling
 
@@ -271,34 +270,13 @@ Treat a successful live policy replacement as a revocation barrier for existing 
 
 The generation language above is a remediation pattern, not a claim about Vercel's current implementation.
 
-## Required alias-account verification before submission
+## Hardened alias-account validation result
 
-- [ ] Researcher is authenticated with the required `@wearehackerone.com` alias.
-- [ ] Exact `team_…` ID captured and inserted above.
-- [ ] Exact `prj_…` ID captured and inserted above.
-- [ ] Every cited fresh alias-run `sbx_…` ID captured and inserted above.
-- [ ] Exact region, Sandbox image, guest runtime, SDK, and controller runtime recorded.
-- [ ] Hardened three-socket PoC reproduced from a fresh nonpersistent sandbox.
-- [ ] Fresh same-IP barrier passed before retained-socket triggers.
-- [ ] At least one retained socket produced one exact credential-bearing post-update event.
-- [ ] Researcher personally reviewed the observer event and confirmed the impact.
-- [ ] All alias-run sandboxes stopped and deleted successfully.
-- [ ] Program policy reread immediately before submission.
+- The Sandbox CLI was verified as the required `@wearehackerone.com` alias.
+- Exact team/project scope is recorded above.
+- Five conclusive fresh runs passed the transform controls, policy-update confirmation, fresh same-IP barrier, trigger timing, socket attribution, command integrity, and cleanup checks.
+- All 15 retained sockets and all fresh attempts were blocked after `deny-all`; no post-update observer event occurred.
+- One additional run was discarded as indeterminate after a timer fired one millisecond before its declared offset. The scheduler now rechecks the wall clock and has a regression test.
+- No HackerOne attachment bundle should be prepared or submitted for this held finding. Private artifacts remain local research history only.
 
-## Attachment checklist
-
-- [ ] `SBX-018-working-poc.zip`, containing:
-  - `pocs/SBX-018/policy-update-existing-sockets.ts`;
-  - `pocs/SBX-018/policy-update-existing-socket.ts`;
-  - `guest/policy-update-socket-probe.mjs`;
-  - `guest/authority-probe.mjs`;
-  - `src/observer-server.ts`, `src/observer-cli.ts`, `src/observer-client.ts`, and `src/contracts.ts`;
-  - `package.json`, `package-lock.json`, `tsconfig.json`, and `tsconfig.poc.json`;
-  - reproduction README.
-- [ ] Fresh alias-account multi-socket private artifact: `<SBX-018-multi-poc-UUID-private.json>`.
-- [ ] Fresh alias-account single-socket private artifact if cited: `<SBX-018-poc-UUID-private.json>`.
-- [ ] Exact SHA-256 checksums for the final ZIP and every evidence attachment.
-- [ ] Sanitized terminal transcript showing commands, alias verification, timestamps, output, and cleanup.
-- [ ] Preliminary development artifact only if useful for triage context: `SBX-018-poc-07e87373-ecca-4f71-8568-482f1c15fa44-private.json`.
-
-Do not attach unrelated artifacts, development-account credentials, observer admin keys, or raw Vercel tokens.
+Do not attach this draft, unrelated artifacts, development-account credentials, observer admin keys, or raw Vercel tokens to the `SBX-013` report.

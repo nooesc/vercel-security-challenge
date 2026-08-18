@@ -4,8 +4,9 @@
 
 - Asset: Vercel Sandbox network firewall / credentials brokering
 - Vulnerability class: Networking and Firewall
-- Vercel Team ID: `<replace after HackerOne-alias reproduction>`
-- Vercel Project ID: `<replace after HackerOne-alias reproduction>`
+- HackerOne-alias Vercel account: `swve@wearehackerone.com`
+- Vercel Team ID: `team_n98ERpVwV7HqmWRudAyK8sXQ`
+- Vercel Project ID: `prj_CyyVykdN06Nrkla6KidZcecLgbCa`
 - Suggested severity: Medium; impact can be higher when the outside route performs a sensitive operation
 - Primary weakness: [CWE-647 — Use of Non-Canonical URL Paths for Authorization Decisions](https://cwe.mitre.org/data/definitions/647.html)
 - Related weakness: [CWE-551 — Authorization Before Parsing and Canonicalization](https://cwe.mitre.org/data/definitions/551.html)
@@ -95,6 +96,8 @@ The attached reproduction bundle contains:
 - `src/contracts.ts`;
 - `package.json`, `package-lock.json`, `tsconfig.json`, and `tsconfig.poc.json`.
 
+Prepared bundle: `SBX-013-working-poc.zip`, SHA-256 `1eebc10cb1c0b562513ac0a786a72a3c37b57cdf0e6c506a47904721ee9001b5`.
+
 With Node.js 20.18 or newer:
 
 ```sh
@@ -131,16 +134,21 @@ Successful output includes:
 
 ## Correlatable evidence
 
-The following preliminary runs used the initial development account. Before submission, reproduce from the required HackerOne-alias Vercel account and replace the submission metadata/evidence table with its `team_…`, `prj_…`, and `sbx_…` identifiers.
+The hardened authenticated-action proof reproduced on two fresh, non-persistent Vercel sandboxes using the required HackerOne-alias account, team `team_n98ERpVwV7HqmWRudAyK8sXQ`, and project `prj_CyyVykdN06Nrkla6KidZcecLgbCa`:
 
-The hardened authenticated-action proof reproduced on two fresh, non-persistent Vercel sandboxes:
-
-| Harness correlation ID | Sandbox name | Vercel session ID | Started (UTC) | Result |
+| Harness correlation ID | Sandbox name | Vercel sandbox/session ID | Started (UTC) | Result |
 | --- | --- | --- | --- | --- |
-| `639e6a5a-d7e3-45f7-ba90-2f2e28ede5ac` | `sbx-013-poc-639e6a5a` | `sbx_ug2PEC6gTcQWHXeHL1xJzOMk5XTJ` | `2026-08-18T20:39:58.271Z` | Controls passed; outside action authorized only by encoded case |
-| `a1ef4cb0-eb8b-46ea-9178-8609953f7b50` | `sbx-013-poc-a1ef4cb0` | `sbx_CesMZpxXQi7SHiTw9uDSDg1ba2UY` | `2026-08-18T20:40:48.261Z` | Controls passed; outside action authorized only by encoded case |
+| `010c5a62-8f01-47dc-9ae3-dd3376c117fd` | `sbx-013-poc-010c5a62` | `sbx_W1TMO10InoRL4LZAukEc8uty6Hqu` | `2026-08-18T22:52:05.875Z` | Controls passed; direct outside action denied; encoded case authorized exactly one outside action |
+| `4f79bbba-ef9b-42b0-b94a-40b13d4f86c0` | `sbx-013-poc-4f79bbba` | `sbx_qqvILzmYtGd9z5t9AF5qON4GX6e5` | `2026-08-18T22:52:21.561Z` | Controls passed; direct outside action denied; encoded case authorized exactly one outside action |
 
-Both sandboxes stopped and deleted successfully. The tracked redacted result is `pocs/SBX-013/evidence/standalone-action-run-a1ef4cb0.json`. The confidential attachment `SBX-013-poc-a1ef4cb0-eb8b-46ea-9178-8609953f7b50-private.json` contains the exact three-event observer excerpt and synthetic value for triage correlation.
+Both sandboxes stopped and deleted successfully, and both observer action configurations were deleted. The proposed confidential attachments are:
+
+- `SBX-013-poc-010c5a62-8f01-47dc-9ae3-dd3376c117fd.json` — redacted controller evidence, SHA-256 `d018e0843685e8f3599036da01c0aab809d5a372c4142ecfd12bc156b41c9fc5`;
+- `SBX-013-poc-010c5a62-8f01-47dc-9ae3-dd3376c117fd-private.json` — exact three-event observer evidence and fresh synthetic secret, SHA-256 `ccc7b4476951c5ab3bf9def4455309bf5dfd462290bc94c4f824a55a536941a4`;
+- `SBX-013-poc-4f79bbba-ef9b-42b0-b94a-40b13d4f86c0.json` — redacted independent reproduction, SHA-256 `ad48135412b269ae5b58d1ae9cbbe036e4c47570e3199607ba972ab596b28ec8`;
+- `SBX-013-poc-4f79bbba-ef9b-42b0-b94a-40b13d4f86c0-private.json` — exact independent observer evidence and fresh synthetic secret, SHA-256 `79831ad24178231368f8a1c759cc974adfade62b23bb24dbf4bba34fbad7cd27`.
+
+The private files contain only per-run synthetic research credentials, but they should remain confidential and be uploaded directly to HackerOne with the source bundle.
 
 ## Impact
 
