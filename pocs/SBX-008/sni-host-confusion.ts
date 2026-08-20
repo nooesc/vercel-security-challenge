@@ -211,25 +211,43 @@ async function main(): Promise<void> {
       caseId: "positive-a",
       destination: observerA,
       httpHost: observerA.host,
+      absoluteTarget: undefined,
       description: "allowed A destination, A SNI, and Host A",
+    },
+    {
+      caseId: "absolute-a-control",
+      destination: observerA,
+      httpHost: observerA.host,
+      absoluteTarget: observerA,
+      description: "absolute-form syntax control with A destination, SNI, Host, and target",
     },
     {
       caseId: "direct-b-negative",
       destination: observerB,
       httpHost: observerB.host,
+      absoluteTarget: undefined,
       description: "blocked direct B destination, B SNI, and Host B",
     },
     {
       caseId: "reverse-b-sni-host-a-negative",
       destination: observerB,
       httpHost: observerA.host,
+      absoluteTarget: undefined,
       description: "blocked B destination and SNI with Host A",
     },
     {
       caseId: "front-a-sni-host-b",
       destination: observerA,
       httpHost: observerB.host,
+      absoluteTarget: undefined,
       description: "test A destination and SNI with Host B",
+    },
+    {
+      caseId: "absolute-b-target",
+      destination: observerA,
+      httpHost: observerA.host,
+      absoluteTarget: observerB,
+      description: "A destination, SNI, and Host with a B absolute-form request target",
     },
   ] as const;
 
@@ -304,6 +322,7 @@ async function main(): Promise<void> {
         __sbx_case: probeCase.caseId,
         __sbx_canary: correlationCanary,
       });
+      const originFormTarget = `/v1/probe/${encodeURIComponent(runId)}/vhost-action?${query}`;
       const guestConfiguration = {
         scopeConfirmation,
         researcherControlledHosts: controlledHosts,
@@ -315,7 +334,9 @@ async function main(): Promise<void> {
         tlsServername: probeCase.destination.hostname,
         httpHost: probeCase.httpHost,
         method: "GET",
-        requestTarget: `/v1/probe/${encodeURIComponent(runId)}/vhost-action?${query}`,
+        requestTarget: probeCase.absoluteTarget === undefined
+          ? originFormTarget
+          : new URL(originFormTarget, probeCase.absoluteTarget).toString(),
         headers: { "x-sbx-correlation": correlationCanary },
         timeoutMs: 20_000,
         maxResponseBodyBytes: 4_096,
@@ -410,9 +431,11 @@ async function main(): Promise<void> {
   const resultFor = (caseId: string): CaseResult | undefined =>
     caseResults.find((entry) => entry.caseId === caseId);
   const positiveResult = resultFor("positive-a");
+  const absoluteAResult = resultFor("absolute-a-control");
   const directBResult = resultFor("direct-b-negative");
   const reverseResult = resultFor("reverse-b-sni-host-a-negative");
   const hostBResult = resultFor("front-a-sni-host-b");
+  const absoluteBResult = resultFor("absolute-b-target");
   const aPositiveEvent = eventFor(observerAEvents, "positive-a");
   const bPositiveEvent = eventFor(observerBEvents, "positive-a");
   const directBEvents = [
@@ -425,14 +448,23 @@ async function main(): Promise<void> {
   ].filter(Boolean);
   const aHostBEvent = eventFor(observerAEvents, "front-a-sni-host-b");
   const bHostBEvent = eventFor(observerBEvents, "front-a-sni-host-b");
+  const aAbsoluteAEvent = eventFor(observerAEvents, "absolute-a-control");
+  const bAbsoluteAEvent = eventFor(observerBEvents, "absolute-a-control");
+  const aAbsoluteBEvent = eventFor(observerAEvents, "absolute-b-target");
+  const bAbsoluteBEvent = eventFor(observerBEvents, "absolute-b-target");
   const positiveBody = responseJson(positiveResult);
+  const absoluteABody = responseJson(absoluteAResult);
   const hostBBody = responseJson(hostBResult);
+  const absoluteBBody = responseJson(absoluteBResult);
   const uniqueActions = [...observerAActions, ...observerBActions].filter(
     (action, index, actions) =>
       actions.findIndex((candidateAction) => candidateAction.operationId === action.operationId) === index,
   );
   const hostBAction = uniqueActions.find((action) => action.caseId === "front-a-sni-host-b");
-  const unexpectedActions = uniqueActions.filter((action) => action.caseId !== "front-a-sni-host-b");
+  const absoluteBAction = uniqueActions.find((action) => action.caseId === "absolute-b-target");
+  const unexpectedActions = uniqueActions.filter(
+    (action) => action.caseId !== "front-a-sni-host-b" && action.caseId !== "absolute-b-target",
+  );
   const guestResponseContainsBrokeredSecret = caseResults.some((entry) =>
     entry.result.response?.body.includes(brokeredSecret) === true
   );
@@ -451,6 +483,24 @@ async function main(): Promise<void> {
       isExpectedEvent(aPositiveEvent, runId, "positive-a", correlationCanary, observerA.host) ||
       isExpectedEvent(bPositiveEvent, runId, "positive-a", correlationCanary, observerA.host)
     );
+  const absoluteAControlPassed =
+    absoluteAResult?.commandExitCode === 0 &&
+    absoluteAResult.result.ok === true &&
+    absoluteAResult.result.response?.statusCode === 421 &&
+    absoluteABody?.selected === false &&
+    bAbsoluteAEvent === undefined &&
+    isExpectedEvent(
+      aAbsoluteAEvent,
+      runId,
+      "absolute-a-control",
+      correlationCanary,
+      observerA.host,
+    ) &&
+    (
+      mode === "credential"
+        ? singleHeader(aAbsoluteAEvent, brokeredHeader) === brokeredSecret
+        : singleHeader(aAbsoluteAEvent, brokeredHeader) === undefined
+    );
   const directBBlocked =
     directBResult?.commandExitCode === 0 &&
     directBResult.result.ok === false &&
@@ -459,7 +509,19 @@ async function main(): Promise<void> {
     reverseResult?.commandExitCode === 0 &&
     reverseResult.result.ok === false &&
     reverseEvents.length === 0;
-  const controlsPassed = positiveControlPassed && directBBlocked && reverseBBlocked;
+  const originFormMismatchRejected =
+    hostBResult?.commandExitCode === 0 &&
+    hostBResult.result.ok === true &&
+    hostBResult.result.response?.statusCode === 403 &&
+    aHostBEvent === undefined &&
+    bHostBEvent === undefined &&
+    hostBAction === undefined;
+  const controlsPassed =
+    positiveControlPassed &&
+    absoluteAControlPassed &&
+    directBBlocked &&
+    reverseBBlocked &&
+    (mode !== "credential" || originFormMismatchRejected);
   const bSpecificHostBEvent =
     hostBResult?.commandExitCode === 0 &&
     isExpectedEvent(
@@ -487,10 +549,34 @@ async function main(): Promise<void> {
     ) &&
     typeof hostBBody.operationId === "string" &&
     hostBBody.operationId === hostBAction?.operationId &&
-    uniqueActions.length === 1 &&
+    unexpectedActions.length === 0;
+  const absoluteBSpecificEvent =
+    absoluteBResult?.commandExitCode === 0 &&
+    isExpectedEvent(
+      bAbsoluteBEvent,
+      runId,
+      "absolute-b-target",
+      correlationCanary,
+      observerB.host,
+    ) &&
+    aAbsoluteBEvent === undefined;
+  const absoluteBActionTriggered =
+    absoluteBResult?.commandExitCode === 0 &&
+    absoluteBResult.result.ok === true &&
+    absoluteBResult.result.response?.statusCode === 200 &&
+    absoluteBBody?.selected === true &&
+    absoluteBBody.authorized === true &&
+    !guestResponseContainsBrokeredSecret &&
+    mode === "credential" &&
+    singleHeader(bAbsoluteBEvent, brokeredHeader) === brokeredSecret &&
+    typeof absoluteBBody.operationId === "string" &&
+    absoluteBBody.operationId === absoluteBAction?.operationId &&
     unexpectedActions.length === 0;
   const operationalFailure = executionError !== undefined || cleanup.errors.length > 0;
-  const candidate = !operationalFailure && controlsPassed && vhostActionTriggered;
+  const candidate =
+    !operationalFailure &&
+    controlsPassed &&
+    (vhostActionTriggered || absoluteBActionTriggered);
   const outcome = operationalFailure
     ? "indeterminate"
     : !controlsPassed
@@ -511,14 +597,19 @@ async function main(): Promise<void> {
     controlsPassed,
     controls: {
       positiveControlPassed,
+      absoluteAControlPassed,
       directBBlocked,
       reverseBBlocked,
+      originFormMismatchRejected,
     },
     signals: {
       bSpecificHostBEvent,
       hostHeaderForwardedSignal,
       vhostActionTriggered,
       vhostActionOperationId: hostBAction?.operationId,
+      absoluteBSpecificEvent,
+      absoluteBActionTriggered,
+      absoluteBActionOperationId: absoluteBAction?.operationId,
       note: "hostHeaderForwardedSignal alone is expected HTTP behavior and is not classified as an exploit",
     },
     guestConfigurationContainsBrokeredSecret: false,
@@ -544,6 +635,8 @@ async function main(): Promise<void> {
       destinationOrigin: entry.destination.origin,
       tlsServername: entry.destination.hostname,
       httpHost: entry.httpHost,
+      requestTargetForm: entry.absoluteTarget === undefined ? "origin" : "absolute",
+      requestTargetAuthority: entry.absoluteTarget?.host,
     })),
     caseResults,
     observerEventCases: {
@@ -562,7 +655,9 @@ async function main(): Promise<void> {
     correlationCanary,
     ...(mode === "credential" ? {
       controllerBrokeredSecretSha256: sha256(brokeredSecret),
-      observerBrokeredSecretSha256: sha256(singleHeader(bHostBEvent, brokeredHeader) ?? ""),
+      observerBrokeredSecretSha256: sha256(
+        singleHeader(bAbsoluteBEvent ?? bHostBEvent, brokeredHeader) ?? "",
+      ),
     } : {}),
     executionError,
     cleanup,

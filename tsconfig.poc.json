@@ -4,12 +4,22 @@
     "types": ["node"]
   },
   "include": [
+    "pocs/SBX-003-021/**/*.ts",
     "pocs/SBX-006/**/*.ts",
     "pocs/SBX-013/**/*.ts",
+    "pocs/SBX-017/**/*.ts",
     "pocs/SBX-008/**/*.ts",
     "pocs/SBX-009/**/*.ts",
     "pocs/SBX-010/**/*.ts",
     "pocs/SBX-018/**/*.ts",
+    "pocs/SBX-020/**/*.ts",
+    "pocs/SBX-023/**/*.ts",
+    "pocs/SBX-025/**/*.ts",
+    "pocs/SBX-026/**/*.ts",
+    "pocs/SBX-031/**/*.ts",
+    "pocs/SBX-032/**/*.ts",
+    "pocs/SBX-036/**/*.ts",
+    "pocs/SBX-050/**/*.ts",
     "pocs/NEXT-WAVE/**/*.ts"
   ],
   "exclude": []

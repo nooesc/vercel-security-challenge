@@ -1,6 +1,6 @@
 # Vercel Sandbox: 30 exploit hypotheses and test cases
 
-Last updated: 2026-08-18
+Last updated: 2026-08-19
 
 ## Model and proof bar
 
@@ -22,7 +22,7 @@ Priority legend:
 | SBX-002 | P0 | A domain allowlist validates only the original name and follows a CNAME to an unauthorized destination. | Allow `allowed.research.test`, configure it as a CNAME to `blocked.research.test`, and deny the blocked server's CIDR. | A TCP/TLS connection reaches the blocked controlled server. |
 | SBX-003 | P0 | DNS rebinding creates a time-of-check/time-of-use gap between policy evaluation and connection routing. | Make one allowed hostname alternate between two controlled IPs; explicitly deny one CIDR. Exercise low TTLs, concurrent connects, and connection retries. | Traffic arrives at the denied controlled IP. |
 | SBX-004 | P0 | Hostname canonicalization differs across DNS, SNI, and policy matching. | Test case, a trailing dot, repeated dots, percent escapes where accepted, IDNA A-label/U-label pairs, and normalized Unicode against one controlled domain. | A spelling not covered by the allow rule reaches the endpoint, or a denied spelling is treated as allowed. |
-| SBX-005 | P0 | Wildcard matching crosses label boundaries or matches the apex/sibling suffix. | Allow `*.allowed.research.test`; try the apex, multiple nested labels, and controlled lookalike suffixes such as `x.allowed.research.test.evil.test`. | A hostname outside the intended suffix is reachable. |
+| SBX-005 | Closed negative | Wildcard matching crosses label boundaries or matches the apex/sibling suffix. SBX-044 is the executable, contract-aware refinement of this same root cause; it is not a separate report. | Live run `b5085200-7760-4b25-ba40-1caadb385a54` tested the documented middle-label pattern `s44a.*.form-app.app` against controlled A `s44a.one.form-app.app` and deeper B `s44a.one.two.form-app.app`. | No finding: A succeeded before/after; B failed pre-connect with exact `EAI_AGAIN/getaddrinfo/-3001` and recorded zero event; all keyed controls, policy readbacks, and cleanup passed. |
 | SBX-006 | P0 | Denied CIDRs can be bypassed with alternative IP representations. | Deny a controlled IPv4/IPv6 range and connect using IPv4-mapped IPv6, compressed IPv6, IPv4-compatible forms, and API-accepted integer/legacy literal forms. | The denied controlled address receives traffic. |
 | SBX-007 | P0 | An allowed HTTP origin can redirect the firewall to an unauthorized origin. | Allow controlled origin A and have it return 301/302/307/308 to denied controlled origin B across ports and schemes. | B receives the redirected request. |
 | SBX-008 | P0 | TLS SNI and HTTP `Host` are authorized independently, enabling domain-fronting-style policy confusion. | Connect to the allowed controlled TLS endpoint while varying SNI and `Host`/absolute-form authority between allowed and denied controlled names. | The denied virtual host or backend is reached through the allowed connection. |

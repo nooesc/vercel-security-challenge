@@ -3,6 +3,7 @@ import { createServer, type IncomingHttpHeaders, type IncomingMessage, type Serv
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AddressInfo } from "node:net";
+import { defineSandboxProxy } from "@vercel/sandbox";
 import type { ObserverEvent } from "./contracts.js";
 
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
@@ -10,8 +11,24 @@ const CANARY_HEADER = "x-sbx-harness-canary";
 const ACTION_SECRET_HEADER = "x-observer-action-secret";
 const REDIRECT_TARGET_HEADER = "x-observer-redirect-target";
 const VHOST_HEADER = "x-observer-vhost";
+const PROXY_ACTION_URL_HEADER = "x-observer-proxy-action-url";
+const PROXY_FAKE_OIDC_SHA256_HEADER = "x-observer-proxy-fake-oidc-sha256";
+const PROXY_CASE_HEADER = "x-sbx-forward-case";
+const PROXY_RESERVED_METADATA_HEADERS = new Set([
+  "vercel-forwarded-host",
+  "vercel-forwarded-scheme",
+  "vercel-forwarded-port",
+  "vercel-forwarded-path",
+]);
 
-type AdminResource = "action-config" | "actions" | "redirect-config" | "vhost-config" | "vhost-actions";
+type AdminResource =
+  | "action-config"
+  | "actions"
+  | "redirect-config"
+  | "vhost-config"
+  | "vhost-actions"
+  | "proxy-config"
+  | "proxy-actions";
 
 interface RecordedAction {
   operationId: string;
@@ -29,6 +46,47 @@ interface VhostConfiguration {
   expectedHost: string;
   expectedSecret?: string;
   actions: RecordedAction[];
+}
+
+interface ProxyAuthenticationRecord {
+  operationId: string;
+  authenticatedAt: string;
+  caseId: string;
+  authenticated: boolean;
+  actionAuthorized: boolean;
+  reconstructedUrl?: string;
+  proxyMeta?: {
+    host: string;
+    teamId: string;
+    projectId: string;
+    sandboxId: string;
+    sandboxName: string;
+  };
+  invalidReasonCode?: "missing-proxy-metadata" | "invalid-proxied-url" | "oidc-verification-failed";
+  rawHeaderAudit: ProxyRawHeaderAudit;
+}
+
+interface ProxyConfiguration {
+  actionUrl: string;
+  expectedGuestFakeOidcSha256: string;
+  records: ProxyAuthenticationRecord[];
+}
+
+interface ProxyRawHeaderField {
+  position: number;
+  name: string;
+  value: string;
+}
+
+interface ProxyRawHeaderAudit {
+  caseId: string;
+  caseHeaderCount: number;
+  caseIdMatched: boolean;
+  oidcHeaderCount: number;
+  oidcValueCount: number;
+  guestFakeOidcObserved: boolean;
+  intermediaryOrderTrusted: false;
+  forwardedFields: ProxyRawHeaderField[];
 }
 
 interface BodyMetadata {
@@ -201,13 +259,23 @@ function eventRoute(pathname: string): string | undefined {
 }
 
 function adminRoute(pathname: string): { runId: string; resource: AdminResource } | undefined {
-  const match = /^\/v1\/runs\/([^/]+)\/(action-config|actions|redirect-config|vhost-config|vhost-actions)$/.exec(pathname);
+  const match = /^\/v1\/runs\/([^/]+)\/(action-config|actions|redirect-config|vhost-config|vhost-actions|proxy-config|proxy-actions)$/.exec(pathname);
   if (!match?.[1] || !match[2]) return undefined;
   try {
     return {
       runId: decodeURIComponent(match[1]),
       resource: match[2] as AdminResource,
     };
+  } catch {
+    return undefined;
+  }
+}
+
+function forwardProxyRun(pathname: string): string | undefined {
+  const match = /^\/v1\/proxy\/([^/]+)\/forward(?:\/.*)?$/.exec(pathname);
+  if (!match?.[1]) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
   } catch {
     return undefined;
   }
@@ -254,6 +322,115 @@ function validRedirectTarget(raw: string | undefined): string | undefined {
   }
 }
 
+function validProxyActionUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const target = new URL(raw);
+    if (
+      target.protocol !== "https:" ||
+      target.username ||
+      target.password ||
+      target.search ||
+      target.hash
+    ) {
+      return undefined;
+    }
+    return target.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function requestHeaders(request: IncomingMessage): Headers {
+  const headers = new Headers();
+  for (let index = 0; index + 1 < request.rawHeaders.length; index += 2) {
+    const name = request.rawHeaders[index];
+    const value = request.rawHeaders[index + 1];
+    if (name === undefined || value === undefined) continue;
+    const normalized = name.toLowerCase();
+    if (normalized === "connection" || normalized === "content-length" || normalized === "transfer-encoding") {
+      continue;
+    }
+    headers.append(name, value);
+  }
+  return headers;
+}
+
+function proxyInvalidReasonCode(
+  error: Error,
+): NonNullable<ProxyAuthenticationRecord["invalidReasonCode"]> {
+  if (error.message === "Missing required proxy headers") return "missing-proxy-metadata";
+  if (error.message === "Invalid proxied request URL") return "invalid-proxied-url";
+  return "oidc-verification-failed";
+}
+
+function proxyRawHeaderAudit(
+  rawHeaders: string[],
+  caseId: string,
+  expectedGuestFakeOidcSha256: string,
+): ProxyRawHeaderAudit {
+  const forwardedFields: ProxyRawHeaderField[] = [];
+  let caseHeaderCount = 0;
+  let caseIdMatched = false;
+  let oidcHeaderCount = 0;
+  let oidcValueCount = 0;
+  let guestFakeOidcObserved = false;
+
+  for (let index = 0; index + 1 < rawHeaders.length; index += 2) {
+    const rawName = rawHeaders[index];
+    const rawValue = rawHeaders[index + 1];
+    if (rawName === undefined || rawValue === undefined) continue;
+    const name = rawName.toLowerCase();
+    if (name === PROXY_CASE_HEADER) {
+      caseHeaderCount += 1;
+      if (rawValue === caseId) caseIdMatched = true;
+      continue;
+    }
+    if (name === "vercel-sandbox-oidc-token") {
+      oidcHeaderCount += 1;
+      const values = rawValue.split(/,\s*/u).filter(Boolean);
+      oidcValueCount += values.length;
+      if (
+        values.some((value) =>
+          createHash("sha256").update(value).digest("hex") === expectedGuestFakeOidcSha256
+        )
+      ) {
+        guestFakeOidcObserved = true;
+      }
+      continue;
+    }
+    if (PROXY_RESERVED_METADATA_HEADERS.has(name) && forwardedFields.length < 32) {
+      forwardedFields.push({
+        position: index / 2,
+        name,
+        value: rawValue.slice(0, 2_048),
+      });
+    }
+  }
+
+  return {
+    caseId,
+    caseHeaderCount,
+    caseIdMatched,
+    oidcHeaderCount,
+    oidcValueCount,
+    guestFakeOidcObserved,
+    // Cloudflare Quick Tunnels may normalize duplicates before this application hop.
+    intermediaryOrderTrusted: false,
+    forwardedFields,
+  };
+}
+
+async function sendFetchResponse(response: ServerResponse, fetchResponse: Response): Promise<void> {
+  const body = Buffer.from(await fetchResponse.arrayBuffer());
+  const headers: Record<string, string> = {};
+  fetchResponse.headers.forEach((value, name) => {
+    headers[name] = value;
+  });
+  response.writeHead(fetchResponse.status, headers);
+  response.end(body);
+}
+
 function normalizedHostname(raw: string | undefined): string | undefined {
   if (!raw || raw.includes("@") || raw.includes("/") || raw.includes("?") || raw.includes("#")) return undefined;
   try {
@@ -277,6 +454,7 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
   const actionConfigurations = new Map<string, ActionConfiguration>();
   const redirectConfigurations = new Map<string, string>();
   const vhostConfigurations = new Map<string, VhostConfiguration>();
+  const proxyConfigurations = new Map<string, ProxyConfiguration>();
   await store.initialize();
 
   const server = createServer((request, response) => {
@@ -366,6 +544,44 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
           response.end();
           return;
         }
+        if (request.method === "POST" && admin.resource === "proxy-config") {
+          const actionUrl = validProxyActionUrl(singleHeader(request.headers, PROXY_ACTION_URL_HEADER));
+          const expectedGuestFakeOidcSha256 = singleHeader(
+            request.headers,
+            PROXY_FAKE_OIDC_SHA256_HEADER,
+          );
+          if (!actionUrl || !/^[a-f0-9]{64}$/u.test(expectedGuestFakeOidcSha256 ?? "")) {
+            sendJson(response, 400, {
+              error: `${PROXY_ACTION_URL_HEADER} and ${PROXY_FAKE_OIDC_SHA256_HEADER} are required`,
+            });
+            return;
+          }
+          proxyConfigurations.set(admin.runId, {
+            actionUrl,
+            expectedGuestFakeOidcSha256: expectedGuestFakeOidcSha256!,
+            records: [],
+          });
+          sendJson(response, 201, { configured: true });
+          return;
+        }
+        if (request.method === "GET" && admin.resource === "proxy-config") {
+          const configuration = proxyConfigurations.get(admin.runId);
+          sendJson(response, 200, {
+            configured: configuration !== undefined,
+            ...(configuration ? { actionUrl: configuration.actionUrl } : {}),
+          });
+          return;
+        }
+        if (request.method === "GET" && admin.resource === "proxy-actions") {
+          sendJson(response, 200, { records: proxyConfigurations.get(admin.runId)?.records ?? [] });
+          return;
+        }
+        if (request.method === "DELETE" && admin.resource === "proxy-config") {
+          proxyConfigurations.delete(admin.runId);
+          response.writeHead(204, { "cache-control": "no-store" });
+          response.end();
+          return;
+        }
         sendJson(response, 405, { error: "method not allowed" });
         return;
       }
@@ -378,6 +594,111 @@ export async function startObserverServer(options: ObserverServerOptions): Promi
           return;
         }
         sendJson(response, 200, { events: await store.forRun(queriedRunId) });
+        return;
+      }
+
+      const proxyRunId = request.method === "GET" ? forwardProxyRun(url.pathname) : undefined;
+      if (proxyRunId !== undefined) {
+        const configuration = proxyConfigurations.get(proxyRunId);
+        if (!configuration) {
+          sendJson(response, 404, { error: "proxy not configured" });
+          return;
+        }
+        const caseId = singleHeader(request.headers, PROXY_CASE_HEADER);
+        const canary = singleHeader(request.headers, CANARY_HEADER);
+        if (!caseId || !canary) {
+          sendJson(response, 400, { error: "missing proxy correlation headers" });
+          return;
+        }
+        const rawHeaderAudit = proxyRawHeaderAudit(
+          request.rawHeaders,
+          caseId,
+          configuration.expectedGuestFakeOidcSha256,
+        );
+        const body = await readBodyMetadata(request, maxBodyBytes);
+        const event: ObserverEvent = {
+          schemaVersion: 1,
+          observedAt: new Date().toISOString(),
+          runId: proxyRunId,
+          testId: "SBX-023-POC",
+          caseId,
+          canary,
+          method: "GET",
+          rawUrl: request.url ?? "/",
+          normalizedPath: url.pathname,
+          ...(request.headers.host ? { host: request.headers.host } : {}),
+          ...(request.socket.remoteAddress ? { remoteAddress: request.socket.remoteAddress } : {}),
+          headers: sanitizeHeaders(request.headers),
+          rawHeaders: sanitizeRawHeaders(request.rawHeaders),
+          bodyLength: body.bodyLength,
+          bodySha256: body.bodySha256,
+        };
+        await store.append(event);
+        if (body.tooLarge) {
+          sendJson(response, 413, { error: "request body too large" });
+          return;
+        }
+
+        const host = singleHeader(request.headers, "host");
+        if (!host || host.includes("/") || host.includes("@")) {
+          sendJson(response, 400, { error: "invalid proxy Host header" });
+          return;
+        }
+        let publicRequestUrl: URL;
+        try {
+          publicRequestUrl = new URL(request.url ?? "/", `https://${host}`);
+        } catch {
+          sendJson(response, 400, { error: "invalid proxy request URL" });
+          return;
+        }
+
+        const proxyHandler = defineSandboxProxy(
+          async (proxiedRequest, meta) => {
+            const reconstructed = new URL(proxiedRequest.url);
+            const expected = new URL(configuration.actionUrl);
+            const actionAuthorized =
+              reconstructed.origin === expected.origin &&
+              reconstructed.pathname === expected.pathname;
+            const operationId = `proxy_${randomBytes(18).toString("base64url")}`;
+            configuration.records.push({
+              operationId,
+              authenticatedAt: new Date().toISOString(),
+              caseId,
+              authenticated: true,
+              actionAuthorized,
+              reconstructedUrl: reconstructed.toString(),
+              proxyMeta: meta,
+              rawHeaderAudit,
+            });
+            return Response.json(
+              { authenticated: true, actionAuthorized, operationId },
+              { status: actionAuthorized ? 200 : 202 },
+            );
+          },
+          async (_proxiedRequest, error) => {
+            const operationId = `proxy_${randomBytes(18).toString("base64url")}`;
+            configuration.records.push({
+              operationId,
+              authenticatedAt: new Date().toISOString(),
+              caseId,
+              authenticated: false,
+              actionAuthorized: false,
+              invalidReasonCode: proxyInvalidReasonCode(error),
+              rawHeaderAudit,
+            });
+            return Response.json(
+              { authenticated: false, actionAuthorized: false, operationId },
+              { status: 403 },
+            );
+          },
+        );
+        await sendFetchResponse(
+          response,
+          await proxyHandler(new Request(publicRequestUrl, {
+            method: "GET",
+            headers: requestHeaders(request),
+          })),
+        );
         return;
       }
 

@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "vsc-h3-action-swve",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "secrets": {
+    "required": ["H3_ACTION_KEY"]
+  },
+  "observability": {
+    "enabled": false
+  },
+  "env": {
+    "sbx032_allowed": {
+      "name": "vsc-tls-allow-swve",
+      "workers_dev": true,
+      "preview_urls": false,
+      "secrets": {
+        "required": ["H3_ACTION_KEY"]
+      },
+      "observability": {
+        "enabled": false
+      }
+    },
+    "sbx032_denied": {
+      "name": "vsc-tls-deny-swve",
+      "workers_dev": true,
+      "preview_urls": false,
+      "secrets": {
+        "required": ["H3_ACTION_KEY"]
+      },
+      "observability": {
+        "enabled": false
+      }
+    }
+  }
+}

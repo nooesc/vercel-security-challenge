@@ -1,0 +1,58 @@
+{
+  "$schema": "../h3-action-worker/node_modules/wrangler/config-schema.json",
+  "name": "vsc-sbx044-swve",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-19",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": false },
+  "durable_objects": {
+    "bindings": [{ "name": "SBX044_LEDGER", "class_name": "Sbx044Ledger" }]
+  },
+  "exports": {
+    "Sbx044Ledger": { "type": "durable-object", "storage": "sqlite" }
+  },
+  "secrets": { "required": ["SBX044_ACTION_KEY", "SBX044_ADMIN_KEY"] },
+  "env": {
+    "allowed": {
+      "name": "vsc-sbx044-allowed-swve",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "SBX044_ROLE": "allowed",
+        "SBX044_HOST": "s44a.one.form-app.app"
+      },
+      "routes": [
+        { "pattern": "s44a.one.form-app.app", "custom_domain": true }
+      ],
+      "observability": { "enabled": false },
+      "durable_objects": {
+        "bindings": [{ "name": "SBX044_LEDGER", "class_name": "Sbx044Ledger" }]
+      },
+      "exports": {
+        "Sbx044Ledger": { "type": "durable-object", "storage": "sqlite" }
+      },
+      "secrets": { "required": ["SBX044_ACTION_KEY", "SBX044_ADMIN_KEY"] }
+    },
+    "denied": {
+      "name": "vsc-sbx044-denied-swve",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "SBX044_ROLE": "denied",
+        "SBX044_HOST": "s44a.one.two.form-app.app"
+      },
+      "routes": [
+        { "pattern": "s44a.one.two.form-app.app", "custom_domain": true }
+      ],
+      "observability": { "enabled": false },
+      "durable_objects": {
+        "bindings": [{ "name": "SBX044_LEDGER", "class_name": "Sbx044Ledger" }]
+      },
+      "exports": {
+        "Sbx044Ledger": { "type": "durable-object", "storage": "sqlite" }
+      },
+      "secrets": { "required": ["SBX044_ACTION_KEY", "SBX044_ADMIN_KEY"] }
+    }
+  }
+}

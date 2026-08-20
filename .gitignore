@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 node_modules/
+.wrangler/
 targets/
 artifacts/
 observer-data/

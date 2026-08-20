@@ -1,15 +1,17 @@
 # SBX-008 SNI/Host policy-confusion probe
 
-This standalone PoC tests whether a sandbox policy that allows only controlled origin A can reach a distinct controlled origin B by connecting with A's TCP destination and TLS SNI while sending B in the HTTP `Host` header.
+This standalone PoC tests whether a sandbox policy that allows only controlled origin A can reach a distinct controlled origin B by connecting with A's TCP destination and TLS SNI while placing B either in the HTTP `Host` header or in an absolute-form HTTP request target.
 
-It is deliberately conservative. Merely showing that a server received `Host: B` is normal HTTP behavior and is recorded only as a weak signal. In default `plain` mode, the PoC reports `candidate: true` only when direct B is blocked but the A/SNI-A/Host-B request executes a B-host-only action exactly once and its opaque operation ID matches the guest response. In optional `credential` mode, it additionally configures a fresh synthetic transform for A and requires the mismatched request to arrive at B with that controller-only value. The secret never enters guest configuration or response data.
+It is deliberately conservative. Merely showing that a server received `Host: B` is normal HTTP behavior and is recorded only as a weak signal. In default `plain` mode, the PoC reports `candidate: true` only when direct B is blocked but the A/SNI-A/Host-B request executes a B-host-only action and its opaque operation ID matches the guest response. In optional `credential` mode, it additionally configures a fresh synthetic transform for A. The absolute-form candidate is accepted only when ordinary origin-form A/SNI-A/Host-B is rejected, the B absolute target reaches B with A's controller-only value, and the B-only action returns the matching opaque operation ID. The secret never enters guest configuration or response data.
 
 ## Cases
 
 1. `positive-a`: destination A, SNI A, Host A; must receive A's synthetic transform and reach the observer but receive `421` from the B-host-only action route.
-2. `direct-b-negative`: destination B, SNI B, Host B; must fail before reaching either observer.
-3. `reverse-b-sni-host-a-negative`: destination B, SNI B, Host A; must also fail before reaching either observer.
-4. `front-a-sni-host-b`: destination A, SNI A, Host B; the candidate case must receive A's transform and authorize B's credential-gated action.
+2. `absolute-a-control`: destination A, SNI A, Host A, absolute target A; proves the proxy accepts absolute-form syntax and applies A's transform.
+3. `direct-b-negative`: destination B, SNI B, Host B; must fail before reaching either observer.
+4. `reverse-b-sni-host-a-negative`: destination B, SNI B, Host A; must also fail before reaching either observer.
+5. `front-a-sni-host-b`: destination A, SNI A, Host B; in credential mode this must be rejected as the discriminator for the absolute-form case.
+6. `absolute-b-target`: destination A, SNI A, Host A, absolute target B; a candidate must reach B with A's transform and authorize B's credential-gated action.
 
 The two observer URLs must be distinct researcher-controlled HTTPS hostnames. They may front separate observer processes or the same controlled vhost-aware observer, but must never target third-party infrastructure.
 
@@ -51,7 +53,7 @@ If using explicit non-interactive credentials, set `VERCEL_TOKEN`, `VERCEL_TEAM_
 
 ## Interpretation
 
-- `candidate`: direct and reverse access to B were blocked, the A control worked, and the mismatched request executed the controller-confirmed B-host-only action exactly once.
+- `candidate`: all controls passed and either the Host mismatch or the distinct absolute-form mismatch executed the controller-confirmed B-only action with the required credential proof.
 - `no-confirmed-exploit`: controls passed, but no B-specific event occurred. A forwarded `Host: B` signal alone is not a boundary break.
 - `indeterminate`: a control or execution step failed, so the authority result cannot be trusted.
 

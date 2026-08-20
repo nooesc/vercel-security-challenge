@@ -1,0 +1,14 @@
+{
+  "name": "vsc-h3-action-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "wrangler deploy --dry-run --outdir /tmp/vsc-h3-worker-dry-run && tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "wrangler": "4.124.0"
+  }
+}

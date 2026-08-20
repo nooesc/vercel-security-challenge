@@ -145,7 +145,6 @@ describe("controlled observer", () => {
       },
     });
     expect(registration.status).toBe(201);
-
     const query = new URLSearchParams({
       __sbx_run: runId,
       __sbx_test: "SBX-013-POC",
@@ -314,6 +313,93 @@ describe("controlled observer", () => {
         }),
       ],
     });
+  });
+
+  it("keeps forwarded proxy authentication server-side and scrubs supplied OIDC tokens", async () => {
+    const { observer } = await start();
+    const runId = "run-proxy-001";
+    const adminHeaders = { authorization: `Bearer ${ADMIN_KEY}` };
+    const actionUrl = "https://b.controlled.example/v1/probe/run-proxy-001/forwarded-action";
+    const fakeOidc = "guest-supplied-invalid-oidc-value";
+    const registration = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-config`, {
+      method: "POST",
+      headers: {
+        ...adminHeaders,
+        "x-observer-proxy-action-url": actionUrl,
+        "x-observer-proxy-fake-oidc-sha256": createHash("sha256").update(fakeOidc).digest("hex"),
+      },
+    });
+    expect(registration.status).toBe(201);
+    const configuration = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-config`, {
+      headers: adminHeaders,
+    });
+    await expect(configuration.json()).resolves.toEqual({ configured: true, actionUrl });
+
+    const proxyAttempt = await fetch(`${observer.baseUrl}/v1/proxy/${runId}/forward`, {
+      headers: {
+        host: "proxy.controlled.example",
+        "x-sbx-forward-case": "fake-oidc-control",
+        "x-sbx-harness-canary": "proxy-correlation",
+        "vercel-forwarded-host": "a.controlled.example",
+        "vercel-forwarded-scheme": "https",
+        "vercel-forwarded-port": "443",
+        "vercel-forwarded-path": "/v1/probe/run-proxy-001/source",
+        "vercel-sandbox-oidc-token": fakeOidc,
+      },
+    });
+    expect(proxyAttempt.status).toBe(403);
+    const attemptBody = (await proxyAttempt.json()) as {
+      authenticated: boolean;
+      actionAuthorized: boolean;
+      operationId: string;
+    };
+    expect(attemptBody).toMatchObject({ authenticated: false, actionAuthorized: false });
+    expect(attemptBody.operationId).toMatch(/^proxy_[A-Za-z0-9_-]+$/);
+
+    const records = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-actions`, {
+      headers: adminHeaders,
+    });
+    expect(records.status).toBe(200);
+    await expect(records.json()).resolves.toEqual({
+      records: [
+        expect.objectContaining({
+          operationId: attemptBody.operationId,
+          caseId: "fake-oidc-control",
+          authenticated: false,
+          actionAuthorized: false,
+          invalidReasonCode: "oidc-verification-failed",
+          rawHeaderAudit: expect.objectContaining({
+            caseId: "fake-oidc-control",
+            caseHeaderCount: 1,
+            caseIdMatched: true,
+            oidcHeaderCount: 1,
+            oidcValueCount: 1,
+            guestFakeOidcObserved: true,
+            intermediaryOrderTrusted: false,
+          }),
+        }),
+      ],
+    });
+
+    const eventResponse = await events(observer.baseUrl, runId);
+    const payload = (await eventResponse.json()) as { events: ObserverEvent[] };
+    expect(payload.events).toHaveLength(1);
+    expect(payload.events[0]?.headers["vercel-sandbox-oidc-token"]).toBeUndefined();
+    expect(payload.events[0]?.rawHeaders.join("\n")).not.toContain(fakeOidc);
+
+    const deletion = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-config`, {
+      method: "DELETE",
+      headers: adminHeaders,
+    });
+    expect(deletion.status).toBe(204);
+    const afterDeletion = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-actions`, {
+      headers: adminHeaders,
+    });
+    await expect(afterDeletion.json()).resolves.toEqual({ records: [] });
+    const configAfterDeletion = await fetch(`${observer.baseUrl}/v1/runs/${runId}/proxy-config`, {
+      headers: adminHeaders,
+    });
+    await expect(configAfterDeletion.json()).resolves.toEqual({ configured: false });
   });
 
   it("keeps the controlled policy-update endpoint alive with explicit framing", async () => {
