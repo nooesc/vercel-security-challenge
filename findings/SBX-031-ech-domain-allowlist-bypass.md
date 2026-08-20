@@ -2,6 +2,8 @@
 
 > **Submission gate — clarification first.** This draft is technically complete, but it is not ready for direct vulnerability submission. The challenge policy instructs researchers to open a clarification when documentation is unclear or absent. Vercel documents SNI-based filtering, while neither the public docs nor the private policy define ECH semantics. Send the ready-to-paste clarification below, obtain Vercel's intent, and personally verify one live run before submitting a vulnerability report.
 
+> **Current disposition:** independently reproduced twice with exact secret-receipt evidence. It remains a technical finding on clarification hold, not an accepted or bounty-awarded report.
+
 ## Submission metadata
 
 - Asset: Vercel Sandbox network firewall

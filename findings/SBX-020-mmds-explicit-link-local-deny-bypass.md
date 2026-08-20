@@ -1,5 +1,7 @@
 # Literal `deny-all` still permits authenticated access to MMDS at `169.254.169.254`
 
+> **Program disposition:** Vercel confirmed the Firecracker/MMDS root cause and MMDSv2 exchange. HackerOne report `#3952509` was closed as an exact duplicate of `#3951306`, whose root was recorded earlier. This document preserves the independently reproduced technical evidence; it is not a new or separate vulnerability claim.
+
 ## Submission metadata
 
 - Asset: Vercel Sandbox network firewall / MMDS
@@ -11,7 +13,7 @@
 - Vercel Project ID: `prj_CyyVykdN06Nrkla6KidZcecLgbCa`
 - Primary Sandbox ID: `sbx_VgoUgV3x73XRCmj73Eri7gXhuX73`
 - Test environment: `@vercel/sandbox@3.0.0`, Vercel region `iad1`
-- Submission state: **READY — same-session differential reproduced live on the required HackerOne-alias account**
+- Submission state: **CLOSED — exact duplicate of HackerOne report `#3951306`; technical result confirmed by Vercel**
 - Severity acknowledgement: I understand the program's severity-inflation bounty penalty. I am requesting Medium only for the demonstrated firewall boundary violation. I am not claiming populated MMDS content, credential disclosure, host escape, or cross-tenant impact.
 
 ## Summary

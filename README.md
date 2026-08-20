@@ -1,6 +1,17 @@
 # Vercel Security Challenge Research
 
-Private, evidence-first tooling and research notes for authorized testing against Vercel's public security programs. The Sandbox harness is deliberately deterministic: a local controller creates one short-lived sandbox, a guest probe exercises a declared case, and a researcher-controlled observer records what actually crossed the network boundary.
+Public, evidence-first tooling and research notes from authorized testing against Vercel's public security programs. The Sandbox harness is deliberately deterministic: a local controller creates one short-lived sandbox, a guest probe exercises a declared case, and a researcher-controlled observer records what actually crossed the network boundary.
+
+## New Sandbox findings
+
+This release adds two independently reproduced Vercel Sandbox firewall findings. The repository now contains four technically reproduced reports across the Sandbox and OSS programs; the fifth report document is a historical signal that did not survive hardened reproduction. Each current report is intentionally narrow about demonstrated impact and includes a bounded reproduction bundle.
+
+| ID | Finding | Demonstrated result | Disposition |
+| --- | --- | --- | --- |
+| `SBX-020` | [Literal `deny-all` permits authenticated MMDS access](findings/SBX-020-mmds-explicit-link-local-deny-bypass.md) | A same-session `deny-all` policy blocked an owned public endpoint while MMDSv2 token exchange and authenticated MMDS access returned `200`. | Vercel confirmed the Firecracker/MMDS root cause; report `#3952509` was closed as an exact duplicate of `#3951306`. |
+| `SBX-031` | [ECH outer-SNI domain allowlist bypass](findings/SBX-031-ech-domain-allowlist-bypass.md) | An allowed ECH public name carried a denied inner hostname and exfiltrated a fresh synthetic file secret to the owned inner endpoint in two live reproductions. | Reproduced; disclosure remains clarification-gated because Vercel's documented ECH authorization semantics are ambiguous. |
+
+See [findings/README.md](findings/README.md) for the complete findings index and status terminology. A duplicate resolution does not invalidate the technical result; it means the same root cause was reported earlier.
 
 ## Programs
 
@@ -74,10 +85,12 @@ The remaining cases in [notes/SANDBOX_HYPOTHESES.md](notes/SANDBOX_HYPOTHESES.md
 
 Selecting `CONTROL-DENY` automatically schedules `CONTROL-ALLOW` first in the same controller process. That dependency prevents an unreachable observer from making an empty deny result look trustworthy.
 
-## Current findings
+## Research status
 
-| ID | Target | Program | Status |
-| --- | --- | --- | --- |
-| FLAGS-001 | `vercel/flags` | Vercel OSS | Reproduced; draft prepared |
-| SBX-013 | Vercel Sandbox firewall | Sandbox challenge | Ready: reproduced three times on HackerOne-alias account, including researcher-personally-verified primary run |
-| SBX-018 | Vercel Sandbox live policy updates | Sandbox challenge | Historical development-account signal; 0/5 hardened alias runs reproduced it, so hold/do not submit |
+The two new Sandbox findings above are the primary results of this research release. Earlier reports and negative or indeterminate investigations remain in [`findings/`](findings/) and [`pocs/`](pocs/) for reproducibility. A PoC directory is not itself a vulnerability claim; trust the status in its README and retained assessment.
+
+| ID | Area | Status |
+| --- | --- | --- |
+| `FLAGS-001` | `vercel/flags` cross-group precompute replay | Reproduced OSS draft. |
+| `SBX-013` | Encoded dot-segment credential-brokering scope | Reproduced on the eligible alias account; historical report retained. |
+| `SBX-018` | Live policy update / stale transform | Historical signal; five hardened alias runs did not reproduce it. |
